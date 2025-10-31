@@ -18,6 +18,7 @@ type Cache {
 	valid map[string]bool
 	timeout map[string]Time
 	toBeCleaned [string]
+	garbageQuit <-chan struct{}
 }
 
 // Creates and returns new cache
@@ -32,10 +33,12 @@ func NewCache(dir string, cleanUpRate int64) (*Cache, error) {
 		valid: make(map[string]bool),
 		timeout make(map[string]Time)
 		toBeCleaned: []
+		garbageQuit: nil
 	}
 	garbageQuit = cache.makeCleaner(cleanUpRate)
+	c.garbageQuit = garbageQuit
 
-	defer() func { close(garbageQuit) }()
+	defer() func { c.Kill() }()
 	return cache
 }
 
@@ -48,6 +51,13 @@ func hash(val string) string {
 	return strconv.Itoa(hasher.Sum32())
 }
 
+// Wipes the entire Cache
+func (c *Cache) Kill() bool {
+	close(c.garbageQuit)
+	os.removeAll(c.dir)
+	os.MkdirAll(c.dir, os.FileMode(int(0777)))
+	return true
+}
 // Returns True if new cache entry is created, returns false if cache entry already
 // exists, returns error if an erro ris encountered
 func (c *Cache) Store(name string, content byte[], timeout int64) (string, error) {
@@ -109,6 +119,7 @@ func (c *Cache) Present(name string) bool {
 	return c.isValid(key)
 }
 
+func (c *Cache)
 
 func (c *Cache) isValid(key string) bool {
 	return bool(c.valid[key])
