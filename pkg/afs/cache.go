@@ -80,6 +80,10 @@ func (c *Cache) Get(name string) (byte[], error) {
 	if !c.isValid(key) {
 		return [], nil
 	}
+	if time.Now().After(c.timeout[key]) {
+		c.markForCleanup(key)
+		return [], nil
+	}
 	c.locks[key].RLock()
 	loc := c.getFileName(key)
 	f, err := os.Open(loc)
@@ -148,23 +152,26 @@ func (c *Cahce) clean() error[] {
 	c.toBeCleaned = []
 	timeoutsToDelete []string
 	now := time.Now()
-	for key, value := range c.timeout {
-		if now.After(value) {
-			delete(c.valid, key)
-			c.locks[key].Lock()
-			loc := c.getFileName(key)
-			err := os.Remove(loc)
-			if(err != nil) {
-				errs = append(errs, err)
-			}
-			c.locks[key].Unlock()
-			delete(c.locks, key)
-			timeoutsToDelete = append(timeoutsToDelete, key)
-		}
-	}
-	for _, key := range timeoutsToDelete {
-		delete(c.timeout, key)
-	}
+	// Code below is good if we see our cache expanding too much, and want to run on a regular
+	// Time frame but timeouts are checked on retrieval so no out of date elements will be
+	// grabbed.
+	// for key, value := range c.timeout {
+	// 	if now.After(value) {
+	// 		delete(c.valid, key)
+	// 		c.locks[key].Lock()
+	// 		loc := c.getFileName(key)
+	// 		err := os.Remove(loc)
+	// 		if(err != nil) {
+	// 			errs = append(errs, err)
+	// 		}
+	// 		c.locks[key].Unlock()
+	// 		delete(c.locks, key)
+	// 		timeoutsToDelete = append(timeoutsToDelete, key)
+	// 	}
+	// }
+	// for _, key := range timeoutsToDelete {
+	// 	delete(c.timeout, key)
+	// }
 	return errs
 }
 
