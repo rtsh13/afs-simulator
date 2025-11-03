@@ -21,7 +21,7 @@ type Cache {
 
 type FileMetaData {
 	valid bool
-	timeout Time
+	timeout time.Time
 	lock sync.RWMutext
 }
 
@@ -143,13 +143,13 @@ func (c *Cache) markForCleanup(key string) bool {
 	return true
 }
 
-func (c *Cahce) clean() error[] {
+func (c *Cache) clean() error[] {
 	var errs []error
-	for _, key := range c.toBeCleaned {
-		fm = c.fileMeta[key]
+	for _, value := range c.toBeCleaned {
+		fm = c.fileMeta[value]
 		fm.valid = false
 		fm.Lock()
-		loc := c.getFileName(key)
+		loc := c.getFileName(value)
 		err := os.Remove(loc)
 		if (err != nil) {
 			errs = append(errs, err)
@@ -157,33 +157,13 @@ func (c *Cahce) clean() error[] {
 		fm.Unlock()
 		delete(c.filesMeta, key)
 	}
-	// Code below is good if we see our cache expanding too much, and want to run on a regular
-	// Time frame but timeouts are checked on retrieval so no out of date elements will be
-	// grabbed. 
-	// c.toBeCleaned = []
-	// timeoutsToDelete []string
-	// now := time.Now()
-	// for key, value := range c.timeout {
-	// 	if now.After(value) {
-	// 		delete(c.valid, key)
-	// 		c.locks[key].Lock()
-	// 		loc := c.getFileName(key)
-	// 		err := os.Remove(loc)
-	// 		if(err != nil) {
-	// 			errs = append(errs, err)
-	// 		}
-	// 		c.locks[key].Unlock()
-	// 		delete(c.locks, key)
-	// 		timeoutsToDelete = append(timeoutsToDelete, key)
-	// 	}
-	// }
-	// for _, key := range timeoutsToDelete {
-	// 	delete(c.timeout, key)
-	// }
 	return errs
 }
 
 func (c *Cache) makeCleaner(rate int64) <-chan struct{}{
+	// If our cache starts expanding beyond control we can also add
+	// a deep clean which can remove even more files (i.e. those with invalid timeouts)
+	// and not just those marked for removal
 	cleanUpTicker =clean time.newTicker(rate * time.Second) 
 	quit := make(chan struct{})
 	go func() {
