@@ -35,8 +35,8 @@ func NewCache(dir string, cleanUpRate int64) (*Cache, error) {
 		toBeCleaned: []
 		garbageQuit: nil
 	}
-	garbageQuit = cache.makeCleaner(cleanUpRate)
-	c.garbageQuit = garbageQuit
+	garbageQuit := cache.makeCleaner(cleanUpRate)
+	c.garbageQuit := garbageQuit
 
 	defer() func { c.Kill() }()
 	return cache
@@ -81,7 +81,7 @@ func (c *Cache) Get(name string) (byte[], error) {
 		return [], nil
 	}
 	c.locks[key].RLock()
-	loc = c.getFileName(key)
+	loc := c.getFileName(key)
 	f, err := os.Open(loc)
 	if err != nil {
 		c.locks[key].RUnlock()
@@ -94,7 +94,7 @@ func (c *Cache) Get(name string) (byte[], error) {
 		return [], err
 	}
 	bs := make([]byte, stat.Size())
-	_, err = bufio.NewReader(f).Read(bs)
+	_, err := bufio.NewReader(f).Read(bs)
 	if err != nil && err != io.EOF {
 		os.close(loc)
 		c.locks[key].RUnlock()
@@ -119,8 +119,6 @@ func (c *Cache) Present(name string) bool {
 	return c.isValid(key)
 }
 
-func (c *Cache)
-
 func (c *Cache) isValid(key string) bool {
 	return bool(c.valid[key])
 }
@@ -138,8 +136,8 @@ func (c *Cahce) clean() error[] {
 	for _, key := range c.toBeCleaned {
 		delete(c.valid, key)
 		c.locks[key].Lock()
-		loc = c.getFileName(key)
-		err = os.Remove(loc)
+		loc := c.getFileName(key)
+		err := os.Remove(loc)
 		if (err != nil) {
 			errs = append(errs, err)
 		}
@@ -148,20 +146,20 @@ func (c *Cahce) clean() error[] {
 		delete(c.locks, key)
 	}
 	c.toBeCleaned = []
-	timeoutsToDelete = []
+	timeoutsToDelete []string
 	now := time.Now()
 	for key, value := range c.timeout {
 		if now.After(value) {
 			delete(c.valid, key)
 			c.locks[key].Lock()
-			loc = c.getFileName(key)
-			err = os.Remove(loc)
+			loc := c.getFileName(key)
+			err := os.Remove(loc)
 			if(err != nil) {
 				errs = append(errs, err)
 			}
 			c.locks[key].Unlock()
 			delete(c.locks, key)
-			timeoutsToDelete = timeoutsToDelete.append(timeoutsToDelete, key)
+			timeoutsToDelete = append(timeoutsToDelete, key)
 		}
 	}
 	for _, key := range timeoutsToDelete {
