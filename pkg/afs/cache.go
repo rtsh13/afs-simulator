@@ -149,8 +149,9 @@ func (c *Cahce) clean() error[] {
 	}
 	c.toBeCleaned = []
 	timeoutsToDelete = []
+	now := time.Now()
 	for key, value := range c.timeout {
-		if time.Now().After(value) {
+		if now.After(value) {
 			delete(c.valid, key)
 			c.locks[key].Lock()
 			loc = c.getFileName(key)
@@ -178,6 +179,8 @@ func (c *Cache) makeCleaner(rate int64) <-chan struct{}{
 			case <-cleanUpTicker.C:
 				errs = c.clean()
 				if len(errs) > 0 {
+					// We can talk about handling errors later, but I think in this instance
+					// We could set up a sub protocol to re-init cache
 					panic()
 				}
 			case <-quit:
