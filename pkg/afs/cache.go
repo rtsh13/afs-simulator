@@ -16,7 +16,7 @@ type Cache {
 	dir string
 	locks map[string]sync.RWMutex
 	valid map[string]bool
-	timeout map[string]Time
+	timeouts map[string]Time
 	toBeCleaned [string]
 	garbageQuit <-chan struct{}
 }
@@ -31,7 +31,7 @@ func NewCache(dir string, cleanUpRate int64) (*Cache, error) {
 		dir: dir,
 		locks: make(map[string]sync.RWMutex),
 		valid: make(map[string]bool),
-		timeout make(map[string]Time)
+		timeouts make(map[string]Time)
 		toBeCleaned: []
 		garbageQuit: nil
 	}
@@ -60,17 +60,17 @@ func (c *Cache) Kill() bool {
 }
 // Returns True if new cache entry is created, returns false if cache entry already
 // exists, returns error if an erro ris encountered
-func (c *Cache) Store(name string, content byte[], timeout int64) (string, error) {
+func (c *Cache) Store(name string, content byte[], timeout int64) (bool, error) {
 	key := hash(name)
 	if c.isValid(key) {
-		return key, nil
+		return false, nil
 	}
 	loc := c.getFileName(key)
 	os.WriteFile(loc, content, os.FileMode(int(0777)))
 	c.valid[key] = true
 	c.locks[key] = sync.RWMutex
-	c.timeout[key] = Time.Now().add(timeout * time.Second)
-	return key, nil
+	c.timeouts[key] = Time.Now().add(timeout * time.Second)
+	return true, nil
 }
 
 // if item is in cache, returns item, else returns and empty byte array
@@ -80,7 +80,7 @@ func (c *Cache) Get(name string) (byte[], error) {
 	if !c.isValid(key) {
 		return [], nil
 	}
-	if time.Now().After(c.timeout[key]) {
+	if time.Now().After(c.timeouts[key]) {
 		c.markForCleanup(key)
 		return [], nil
 	}
@@ -132,6 +132,7 @@ func (c *Cache) markForCleanup(key string) bool {
 		return false
 	}
 	c.toBeCleaned = append(c.toBeCleaned, key)
+	c.isValid[key] = false
 	return true
 }
 
@@ -146,15 +147,15 @@ func (c *Cahce) clean() error[] {
 			errs = append(errs, err)
 		}
 		c.locks[key].Unlock()
-		delete(c.timeout, key)
+		delete(c.timeouts, key)
 		delete(c.locks, key)
 	}
-	c.toBeCleaned = []
-	timeoutsToDelete []string
-	now := time.Now()
 	// Code below is good if we see our cache expanding too much, and want to run on a regular
 	// Time frame but timeouts are checked on retrieval so no out of date elements will be
-	// grabbed.
+	// grabbed. 
+	// c.toBeCleaned = []
+	// timeoutsToDelete []string
+	// now := time.Now()
 	// for key, value := range c.timeout {
 	// 	if now.After(value) {
 	// 		delete(c.valid, key)
