@@ -14,11 +14,15 @@ import(
 )
 type Cache {
 	dir string
-	locks map[string]sync.RWMutex
-	valid map[string]bool
-	timeouts map[string]Time
+	filesMeta map[string]FileMetaData
 	toBeCleaned [string]
 	garbageQuit <-chan struct{}
+}
+
+type FileMetaData {
+	valid bool
+	timeout Time
+	lock sync.RWMutext
 }
 
 // Creates and returns new cache
@@ -29,16 +33,11 @@ func NewCache(dir string, cleanUpRate int64) (*Cache, error) {
 	os.MkdirAll(dir, os.FileMode(int(0777)))
 	cache := {
 		dir: dir,
-		locks: make(map[string]sync.RWMutex),
-		valid: make(map[string]bool),
-		timeouts make(map[string]Time)
+		filesMeta: make(map[string]FileMetaData)
 		toBeCleaned: []
 		garbageQuit: nil
 	}
-	garbageQuit := cache.makeCleaner(cleanUpRate)
-	c.garbageQuit := garbageQuit
-
-	defer() func { c.Kill() }()
+	cache.garbageQuit := cache.makeCleaner(cleanUpRate)
 	return cache
 }
 
@@ -67,9 +66,11 @@ func (c *Cache) Store(name string, content byte[], timeout int64) (bool, error) 
 	}
 	loc := c.getFileName(key)
 	os.WriteFile(loc, content, os.FileMode(int(0777)))
-	c.valid[key] = true
-	c.locks[key] = sync.RWMutex
-	c.timeouts[key] = Time.Now().add(timeout * time.Second)
+	c.filesMeta[key] := {
+		valid: true
+		lock: sync.RWMutex
+		timeout: time.Now().add(timeout * time.Second)
+	}
 	return true, nil
 }
 
@@ -77,35 +78,36 @@ func (c *Cache) Store(name string, content byte[], timeout int64) (bool, error) 
 // returns any error ran into
 func (c *Cache) Get(name string) (byte[], error) {
 	key := hash(name)
+	fm = c.filesMeta[key]
 	if !c.isValid(key) {
 		return [], nil
 	}
-	if time.Now().After(c.timeouts[key]) {
+	if time.Now().After(fm.timeout) {
 		c.markForCleanup(key)
 		return [], nil
 	}
-	c.locks[key].RLock()
+	fm.lock.RLock()
 	loc := c.getFileName(key)
 	f, err := os.Open(loc)
 	if err != nil {
-		c.locks[key].RUnlock()
+		fm.lock.RUnlock()
 		return [], err
 	}
 	stat, err := f.Stat()
 	if err != nil {
 		os.close(loc)
-		c.locks[key].RUnlock()
+		fm.lock.RUnlock()
 		return [], err
 	}
 	bs := make([]byte, stat.Size())
 	_, err := bufio.NewReader(f).Read(bs)
 	if err != nil && err != io.EOF {
 		os.close(loc)
-		c.locks[key].RUnlock()
+		fm.lock.RUnlock()
 		return [], err
 	}
 	os.close(loc)
-	c.locks[key].RUnlock()
+	fm.lock.RUnlock()
 	return bs, nil
 }
 
@@ -124,31 +126,36 @@ func (c *Cache) Present(name string) bool {
 }
 
 func (c *Cache) isValid(key string) bool {
-	return bool(c.valid[key])
+	val, ok = c.filesMeta[key]
+	if !ok {
+		return false
+	}
+	return bool(c.filesMeta[key].valid)
 }
 
 func (c *Cache) markForCleanup(key string) bool {
-	if (!c.isValid(key)) {
+	fm, ok = c.filesMeta[key]
+	if (!ok) {
 		return false
 	}
 	c.toBeCleaned = append(c.toBeCleaned, key)
-	c.isValid[key] = false
+	fm.valid = false
 	return true
 }
 
 func (c *Cahce) clean() error[] {
 	var errs []error
 	for _, key := range c.toBeCleaned {
-		delete(c.valid, key)
-		c.locks[key].Lock()
+		fm = c.fileMeta[key]
+		fm.valid = false
+		fm.Lock()
 		loc := c.getFileName(key)
 		err := os.Remove(loc)
 		if (err != nil) {
 			errs = append(errs, err)
 		}
-		c.locks[key].Unlock()
-		delete(c.timeouts, key)
-		delete(c.locks, key)
+		fm.Unlock()
+		delete(c.filesMeta, key)
 	}
 	// Code below is good if we see our cache expanding too much, and want to run on a regular
 	// Time frame but timeouts are checked on retrieval so no out of date elements will be
