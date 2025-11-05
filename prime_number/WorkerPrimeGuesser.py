@@ -3,7 +3,9 @@ import json
 import socket
 import sys
 import time
-
+#Need to think a bit.
+#What I need: Connect to the coordinator, Register,Request work
+#Process each assigned file, Submit results and mark work as done, Repeat until no work remains
 class WorkerPrimeGuesser:
     def __init__(self,worker_id, host ='localhost', port=5000, k= 5):
         self.worker_id = worker_id
@@ -24,7 +26,10 @@ class WorkerPrimeGuesser:
         ack = self._receive()
         print(f"Worker {self.worker_id} connected to server at {self.host}:{self.port}")
 
-
+    def work(self):
+        pass
+    def _process_file(self, filepath):
+        pass
     def _power(self, a, n, p):
         #(a^n) % p
         result = 1
@@ -48,4 +53,11 @@ class WorkerPrimeGuesser:
             if self._power(a, n-1,n) != 1:
                 return False
         return True
-    
+    def _send(self, message):
+        pass
+    def _receive(self):
+        pass
+    def _snapshot(self,snapshot_id):
+        pass
+    def close(self):
+        pass

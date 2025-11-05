@@ -27,13 +27,14 @@ class Coordinator:
         self.snapshot_state = {}
         self.workers_snapshot_received = set()
         self._init_files()
-
+    #initialize work queue
     def _init_files(self):
         if not os.path.exists(self.input_dir):
             os.makedirs(self.input_dir)
         self.available_files = [f for f in os.listdir(self.input_dir)
                                  if os.path.isfile(os.path.join(self.input_dir, f))]
         open(self.output_file, "a").close() 
+    #start the coordinator server
     def start(self):
         server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -48,6 +49,7 @@ class Coordinator:
             print("Shutting down coordinator.")
         finally:
             server.close()
+    #Handle communication with one worker
     def _handle_worker(self, client_sock, addr):
         worker_id = None
         try:
@@ -83,6 +85,7 @@ class Coordinator:
                         del self.workers[worker_id]
                     self._reassign_work(worker_id)
             client_sock.close()
+    #Assign next file to worker
     def _assign_work(self, worker_id):
         with self.lock:
             if self.available_files:
@@ -93,6 +96,7 @@ class Coordinator:
                 return {'type': 'work', 'file_name': file_name, 'filepath': filepath}
             else:
                 return {'type': 'no_work'}
+    #Mark a file as done
     def _complete_file(self, file_name, worker_id):
         with self.lock:
             if file_name in self.assigned_files:
@@ -100,6 +104,7 @@ class Coordinator:
             self.completed_files.add(file_name)
             print(f"Worker {worker_id} completed file {file_name}")
             print(f"Progress: {len(self.completed_files)}/{len(self.completed_files) + len(self.available_files) + len(self.assigned_files)} files completed.")
+    #Recover from worker failure
     def _reassign_file(self, worker_id):
         with self.lock:
             to_reassign = [f for f, w in self.assigned_files.items() if w == worker_id]
@@ -107,14 +112,16 @@ class Coordinator:
                 del self.assigned_files[f]
                 self.available_files.append(f)
                 print(f"Reassigned file {f} from worker {worker_id} back to available pool.")
+    #Save primes to output file
     def _write_primes(self, primes):
         with self.lock:
             with open(self.output_file, 'a') as f:
                 for prime in primes:
                     f.write(f"{prime}\n")
+    #send message to a worker
     def _send(self, client_sock, message):
         client_sock.sendall((json.dumps(message) + '\n').encode())
-
+    #Snapshot
     def initiate_snapshot(self):
         pass  
         # need help, not sure.
