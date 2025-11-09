@@ -76,3 +76,40 @@ type GetDirectoriesResponse struct {
 	InputDir  string
 	OutputDir string
 }
+
+//PaxosServerInfo
+//Check the datatypes here
+type PaxosServerInfo struct {
+	Address string
+	NodeID float64
+}
+
+type ElectionInfo struct {
+	ElectionNumber float64
+	Coordinator *PaxosServerInfo
+}
+
+
+type LeaderRequest struct {
+	Message string
+	NodeIDs []float64
+	ElectionNumber float64
+}
+
+//Would like to fix sending value as interface
+type ProposalResponse struct {
+	PromiseBool bool
+	ProposalStamp float64	
+	ExistingValue *interface{}
+}
+
+//Check over sending value as interface...
+//Maybe needs to be turned into JSON? Or other
+type AcceptanceRequest struct {
+	ProposalStamp timestamp
+	Content interface{}
+}
+
+type AcceptanceResponse struct {
+	ProposalStamp timestamp
+}
