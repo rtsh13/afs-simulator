@@ -10,6 +10,8 @@ import (
 	"sync"
 	"time"
 
+	"net/rpc/jsonrpc"
+
 	utils "github.com/afs-simulator/pkg/utils"
 )
 
@@ -252,6 +254,6 @@ func (fs *FileServer) Start(address string) error {
 			log.Printf("Accept error: %v", err)
 			continue
 		}
-		go rpc.ServeConn(conn)
+		go jsonrpc.ServeConn(conn)
 	}
 }
