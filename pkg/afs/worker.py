@@ -10,8 +10,6 @@ class AFSJsonRPCClient:
     """A simplified client for Go's net/rpc running JSON-RPC over TCP."""
 
     def __init__(self, server_addr="localhost:8080"):
-        # The default AFS server address from your start_system.sh is not provided, 
-        # but the Go server typically runs on 8080.
         host, port = server_addr.split(':')
         self.host = host
         self.port = int(port)
