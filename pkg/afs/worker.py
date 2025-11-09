@@ -9,7 +9,7 @@ import hashlib
 
 
 class AFSClient:
-    def __init__(self, client_id, cache_dir, server_addr="localhost:8080"):
+    def __init__(self, client_id, cache_dir, server_addr="localhost:8080", max_retries=3, retry_delay=1):
         """
         Initialize AFS client
         
@@ -26,6 +26,9 @@ class AFSClient:
         host, port = server_addr.split(':')
         self.host = host
         self.port = int(port)
+
+        self.max_retries = max_retries # 3 attempts by default
+        self.retry_delay = retry_delay # 1 second delay
         
         # Cache metadata: filename -> CacheEntry
         self.cache = {}
@@ -38,47 +41,58 @@ class AFSClient:
         print(f"  Cache dir: {cache_dir}")
 
     async def _rpc_call(self, method_name: str, params: dict):
-        """Make JSON-RPC call to Go server"""
-        try:
-            reader, writer = await asyncio.open_connection(self.host, self.port)
-            
-            request = {
-                "method": method_name,
-                "params": [params],
-                "id": random.randint(1, 100000)
-            }
+        """Make JSON-RPC call to Go server with retry logic (Task 2)."""
 
-            json_request = json.dumps(request)
-            writer.write(json_request.encode('utf-8'))
-            await writer.drain()
-
-            # Read response (large buffer for file content)
-            data = await reader.read(10 * 1024 * 1024)  # 10MB
-            writer.close()
-            await writer.wait_closed()
-            
-            if not data:
-                raise Exception("Empty response from server")
-
-            response = json.loads(data.decode('utf-8'))
-            
-            if response.get("error"):
-                raise Exception(f"RPC Error: {response['error'].get('message', 'Unknown')}")
-            
-            result = response.get("result")
-            if not result:
-                raise Exception("No result in RPC response")
+        for attempt in range(self.max_retries):
+            try:
+                # 1. Establish connection (Network operation - primary failure point)
+                reader, writer = await asyncio.open_connection(self.host, self.port)
                 
-            # Check application-level success
-            if not result.get('Success', True):
-                raise Exception(result.get('Error', 'Operation failed'))
+                # 2. Build and send request (Non-failure prone)
+                request = {
+                    "method": method_name,
+                    "params": [params],
+                    "id": random.randint(1, 100000)
+                }
 
-            return result
+                json_request = json.dumps(request)
+                writer.write(json_request.encode('utf-8'))
+                await writer.drain()
+
+                # 3. Read response and close (Network operation)
+                data = await reader.read(10 * 1024 * 1024)
+                writer.close()
+                await writer.wait_closed()
+                
+                if not data:
+                    raise Exception("Empty response from server")
+
+                response = json.loads(data.decode('utf-8'))
+                
+                # 4. Check for errors (Application-level)
+                if response.get("error"):
+                    raise Exception(f"RPC Error: {response['error'].get('message', 'Unknown')}")
+                
+                result = response.get("result")
+                if not result or not result.get('Success', True):
+                     raise Exception(result.get('Error', 'Operation failed'))
+
+                return result
+                
+            except (ConnectionRefusedError, ConnectionResetError, TimeoutError, OSError) as e:
+                # Catch network-related exceptions (server down/unreachable)
+                if attempt < self.max_retries - 1:
+                    print(f"[{method_name}] Connection failed (Attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {self.retry_delay}s...")
+                    await asyncio.sleep(self.retry_delay)
+                else:
+                    # Final attempt failed
+                    print(f"[{method_name}] All {self.max_retries} attempts failed.")
+                    # Re-raise the exception, which will be caught by process_file
+                    raise Exception(f"Server Unreachable after {self.max_retries} attempts.")
             
-        except ConnectionRefusedError:
-            raise Exception(f"Cannot connect to AFS server at {self.host}:{self.port}")
-        except Exception as e:
-            raise Exception(f"RPC call failed ({method_name}): {e}")
+            except Exception as e:
+                # Catch all other exceptions (JSONDecodeError, unexpected failure) immediately
+                raise Exception(f"RPC call failed ({method_name}): {e}")
 
     def _get_cache_path(self, filename):
         """Get local cache file path"""
@@ -441,6 +455,9 @@ class WorkerClient(object):
         try:
             start_time = time.time()
             
+            print(f"--- SIMULATION DELAY: Waiting 20s before RPC for server kill ---")
+            await asyncio.sleep(20)
+
             # Open file via AFS (with caching)
             print(f"[Task {task_id}] Opening {filename} via AFS...")
             content_bytes = await self.afs_client.open(filename)
