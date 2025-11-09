@@ -22,15 +22,14 @@ sleep 2
 
 # Start coordinator
 echo "Starting coordinator..."
-python3 pkg/afs/coordinator.py > logs/coordinator.log 2>&1 &
+python3 -u pkg/afs/coordinator.py > logs/coordinator.log 2>&1 &
 sleep 2
 
 # Start 3 workers
 echo "Starting workers..."
-python3 pkg/afs/worker.py worker-1 > logs/worker1.log 2>&1 &
-python3 pkg/afs/worker.py worker-2 > logs/worker2.log 2>&1 &
-python3 pkg/afs/worker.py worker-3 > logs/worker3.log 2>&1 &
-
+python3 -u pkg/afs/worker.py worker-1 > logs/worker1.log 2>&1 &
+python3 -u pkg/afs/worker.py worker-2 > logs/worker2.log 2>&1 &
+python3 -u pkg/afs/worker.py worker-3 > logs/worker3.log 2>&1 &
 sleep 1
 
 echo
