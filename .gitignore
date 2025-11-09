@@ -33,6 +33,7 @@ go.work.sum
 __pycache__
 
 snapshots/*
+primes.txt
 
 !snapshots/successful_snapshot.json
 !snapshots/unsuccessful_snapshot.json
