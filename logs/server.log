@@ -1,0 +1,6 @@
+2025/11/09 17:12:09 File server listening on :8080
+2025/11/09 17:12:09 Input directory: ./data/input
+2025/11/09 17:12:09 Output directory: ./data/output
+2025/11/09 17:12:13 Client worker-2 fetching file: input_dataset_002.txt
+2025/11/09 17:12:13 Client worker-1 fetching file: input_dataset_001.txt
+2025/11/09 17:12:13 Client worker-3 fetching file: input_dataset_003.txt
