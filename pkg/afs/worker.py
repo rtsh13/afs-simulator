@@ -490,7 +490,7 @@ class WorkerClient(object):
                 'result': f'Found {len(primes)} primes'
             })
             
-            print(f"[Task {task_id}] ✓ Complete: {len(primes)}/{len(numbers)} primes found in {elapsed:.2f}s")
+            print(f"[Task {task_id}] Complete: {len(primes)}/{len(numbers)} primes found in {elapsed:.2f}s")
             print(f"{'='*60}\n")
             
             # Close file (flushes if modified)

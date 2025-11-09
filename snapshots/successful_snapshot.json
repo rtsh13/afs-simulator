@@ -7,40 +7,49 @@
         "filename": "input_dataset_001.txt"
       },
       {
-        "task_id": 2,
-        "filename": "input_dataset_002.txt"
-      },
-      {
         "task_id": 3,
         "filename": "input_dataset_003.txt"
+      },
+      {
+        "task_id": 2,
+        "filename": "input_dataset_002.txt"
       }
     ],
     "task_counter": 3,
     "workers": [
-      "worker-1",
       "worker-2",
+      "worker-1",
       "worker-3"
     ]
   },
   "workers": {
+    "worker-2": {
+      "worker_id": "worker-2",
+      "tasks_processed": 1,
+      "tasks_failed": 0,
+      "cache_files": [
+        "input_dataset_001.txt"
+      ],
+      "timestamp": 1762727966.7494102
+    },
     "worker-1": {
       "worker_id": "worker-1",
       "tasks_processed": 1,
       "tasks_failed": 0,
-      "timestamp": 1762708361.6368608
+      "cache_files": [
+        "input_dataset_002.txt"
+      ],
+      "timestamp": 1762727966.749426
     },
     "worker-3": {
       "worker_id": "worker-3",
       "tasks_processed": 1,
       "tasks_failed": 0,
-      "timestamp": 1762708361.636862
-    },
-    "worker-2": {
-      "worker_id": "worker-2",
-      "tasks_processed": 1,
-      "tasks_failed": 0,
-      "timestamp": 1762708361.636862
+      "cache_files": [
+        "input_dataset_003.txt"
+      ],
+      "timestamp": 1762727966.7494478
     }
   },
-  "timestamp": 1762708361.6364439
+  "timestamp": 1762727966.749007
 }
