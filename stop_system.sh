@@ -3,9 +3,9 @@
 echo "Stopping Distributed Prime Finding System..."
 
 # Kill all related processes
-pkill -f "cmd/server/main.go" && echo "✓ Stopped file servers"
-pkill -f "pkg/afs/coordinator.py" && echo "✓ Stopped coordinator"
-pkill -f "pkg/afs/worker.py" && echo "✓ Stopped workers"
+pkill -f "cmd/server/main.go" && echo "Stopped file servers"
+pkill -f "pkg/afs/coordinator.py" && echo "Stopped coordinator"
+pkill -f "pkg/afs/worker.py" && echo "Stopped workers"
 
 sleep 1
 
