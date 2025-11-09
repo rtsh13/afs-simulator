@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
+	"afs/cache"
 
 	"github.com/afs-simulator/pkg/utils"
 )
@@ -19,15 +20,11 @@ type AFSClient struct {
 	rpcClient *rpc.Client
 
 	// Cache metadata
-	cacheMutex sync.RWMutex
-	cacheInfo  map[string]*CachedFile
+	// cacheMutex sync.RWMutex
+	// cacheInfo  map[string]*CachedFile
+	cache Cache
 }
 
-type CachedFile struct {
-	LocalPath string
-	Version   int64
-	IsDirty   bool
-}
 
 func NewAFSClient(clientID, cacheDir, serverAddr string) (*AFSClient, error) {
 	// Create cache directory
@@ -46,7 +43,7 @@ func NewAFSClient(clientID, cacheDir, serverAddr string) (*AFSClient, error) {
 		cacheDir:   cacheDir,
 		serverAddr: serverAddr,
 		rpcClient:  client,
-		cacheInfo:  make(map[string]*CachedFile),
+		cache = NewCache(cacheDir, 300)
 	}
 
 	log.Printf("AFS Client %s connected to %s", clientID, serverAddr)
@@ -57,16 +54,17 @@ func (c *AFSClient) Open(filename string, mode string) (*os.File, error) {
 	log.Printf("Client %s opening file: %s", c.clientID, filename)
 
 	// Check if file is in cache
-	c.cacheMutex.RLock()
-	cached, inCache := c.cacheInfo[filename]
-	c.cacheMutex.RUnlock()
+	file, version, err := c.cache.Get(filename)
+	if err != nil {
+		version = -1
+	}
 
-	if inCache {
+	if version != -1 {
 		// Validate cache with server
 		authReq := &utils.TestAuthRequest{
 			ClientID: c.clientID,
 			Filename: filename,
-			Version:  cached.Version,
+			Version:  version,
 		}
 		authResp := &utils.TestAuthResponse{}
 
@@ -76,9 +74,11 @@ func (c *AFSClient) Open(filename string, mode string) (*os.File, error) {
 
 		if authResp.Valid {
 			log.Printf("Using cached version of %s", filename)
-			return os.OpenFile(cached.LocalPath, os.O_RDWR, 0644)
+			return file
 		}
 
+		cache.close(file, filename)
+		cache.remove(filename)
 		log.Printf("Cache invalid for %s, fetching from server", filename)
 	}
 
@@ -87,11 +87,11 @@ func (c *AFSClient) Open(filename string, mode string) (*os.File, error) {
 		return nil, err
 	}
 
-	c.cacheMutex.RLock()
-	localPath := c.cacheInfo[filename].LocalPath
-	c.cacheMutex.RUnlock()
-
-	return os.OpenFile(localPath, os.O_RDWR, 0644)
+	n_file, n_version, n_error = c.cache.Get(filename)
+	if n_error != nil {
+		panic()
+	}
+	return n_file, nil
 }
 
 func (c *AFSClient) fetchFromServer(filename string) error {
@@ -110,19 +110,10 @@ func (c *AFSClient) fetchFromServer(filename string) error {
 	}
 
 	// Write to local cache
-	localPath := filepath.Join(c.cacheDir, filename)
-	if err := os.WriteFile(localPath, resp.Content, 0644); err != nil {
+	stored, err := c.cache.Store(filename, respe.Content, resp.Version, 120)
+	if err != nil {
 		return fmt.Errorf("failed to write cache: %v", err)
 	}
-
-	// Update cache metadata
-	c.cacheMutex.Lock()
-	c.cacheInfo[filename] = &CachedFile{
-		LocalPath: localPath,
-		Version:   resp.Version,
-		IsDirty:   false,
-	}
-	c.cacheMutex.Unlock()
 
 	log.Printf("Cached %s (version %d, %d bytes)", filename, resp.Version, len(resp.Content))
 	return nil

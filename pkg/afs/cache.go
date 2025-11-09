@@ -23,6 +23,8 @@ type FileMetaData {
 	valid bool
 	timeout time.Time
 	lock sync.RWMutext
+	open: bool
+	version: int64
 }
 
 // Creates and returns new cache
@@ -59,10 +61,19 @@ func (c *Cache) Kill() bool {
 }
 // Returns True if new cache entry is created, returns false if cache entry already
 // exists, returns error if an erro ris encountered
-func (c *Cache) Store(name string, content byte[], timeout int64) (bool, error) {
+func (c *Cache) Store(name string, content *os.File, version int64, timeout int64) (bool, error) {
 	key := hash(name)
 	if c.isValid(key) {
 		return false, nil
+	}
+	index := -1
+	for i, v := range c.toBeCleaned {
+		if v == key {
+			index = i
+		}
+	}
+	if index != -1 {
+		c.toBeCleaned = append(c.toBeCleaned[:index], c.toBeCleaned[index + 1:]...)
 	}
 	loc := c.getFileName(key)
 	os.WriteFile(loc, content, os.FileMode(int(0777)))
@@ -70,45 +81,41 @@ func (c *Cache) Store(name string, content byte[], timeout int64) (bool, error) 
 		valid: true
 		lock: sync.RWMutex
 		timeout: time.Now().add(timeout * time.Second)
+		version: int64
 	}
 	return true, nil
 }
 
 // if item is in cache, returns item, else returns and empty byte array
 // returns any error ran into
-func (c *Cache) Get(name string) (byte[], error) {
+func (c *Cache) Get(name string) (*os.File, int64, error) {
 	key := hash(name)
-	fm = c.filesMeta[key]
 	if !c.isValid(key) {
-		return [], nil
+		return [], -1, nil
 	}
+	fm = c.filesMeta[key]
 	if time.Now().After(fm.timeout) {
 		c.markForCleanup(key)
-		return [], nil
+		return [], -1, nil
 	}
 	fm.lock.RLock()
 	loc := c.getFileName(key)
-	f, err := os.Open(loc)
+	f, err := os.OpenFile(loc, os.O_RDWR, 0644)
 	if err != nil {
 		fm.lock.RUnlock()
-		return [], err
+		return [], -1, err
 	}
-	stat, err := f.Stat()
-	if err != nil {
-		os.close(loc)
-		fm.lock.RUnlock()
-		return [], err
+	return f, fm.version, nil
+}
+
+func (c *Cache) Close(file *os.File, name string) (bool, error) {
+	key := hash(name)
+	if !c.isValid(key) {
+		return false, nil
 	}
-	bs := make([]byte, stat.Size())
-	_, err := bufio.NewReader(f).Read(bs)
-	if err != nil && err != io.EOF {
-		os.close(loc)
-		fm.lock.RUnlock()
-		return [], err
-	}
-	os.close(loc)
+	fm = c.filesMeta[key]
 	fm.lock.RUnlock()
-	return bs, nil
+	file.close()
 }
 
 // Removes item from valid return pool and marks it
@@ -138,8 +145,10 @@ func (c *Cache) markForCleanup(key string) bool {
 	if (!ok) {
 		return false
 	}
+	fm.lock.RLock()
 	c.toBeCleaned = append(c.toBeCleaned, key)
 	fm.valid = false
+	fm.lock.RUnlock()
 	return true
 }
 
@@ -147,8 +156,8 @@ func (c *Cache) clean() error[] {
 	var errs []error
 	for _, value := range c.toBeCleaned {
 		fm = c.fileMeta[value]
-		fm.valid = false
 		fm.Lock()
+		fm.valid = false
 		loc := c.getFileName(value)
 		err := os.Remove(loc)
 		if (err != nil) {
