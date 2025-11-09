@@ -1,0 +1,213 @@
+package afs
+
+import(
+	"os"
+	"sync"
+	"errors"
+	"time"
+	"hash"
+	"hash/fnv"
+	"strconv"
+	"strings"
+	"bufio"
+	"io"
+)
+type Cache {
+	dir string
+	filesMeta map[string]FileMetaData
+	toBeCleaned [string]
+	garbageQuit <-chan struct{}
+}
+
+type FileMetaData {
+	valid bool
+	timeout Time
+	lock sync.RWMutext
+}
+
+// Creates and returns new cache
+// side effect: will destroy target directory if it already exists,
+// and make a new one
+func NewCache(dir string, cleanUpRate int64) (*Cache, error) {
+	os.removeAll(dir)
+	os.MkdirAll(dir, os.FileMode(int(0777)))
+	cache := {
+		dir: dir,
+		filesMeta: make(map[string]FileMetaData)
+		toBeCleaned: []
+		garbageQuit: nil
+	}
+	cache.garbageQuit := cache.makeCleaner(cleanUpRate)
+	return cache
+}
+
+// has a 1 in 4 billion chance of collision
+// can change underlying hash function if necessary
+// when scaling
+func hash(val string) string {
+	hasher = fnv.New32a()
+	hasher.Write([]byte(s))
+	return strconv.Itoa(hasher.Sum32())
+}
+
+// Wipes the entire Cache
+func (c *Cache) Kill() bool {
+	close(c.garbageQuit)
+	os.removeAll(c.dir)
+	os.MkdirAll(c.dir, os.FileMode(int(0777)))
+	return true
+}
+// Returns True if new cache entry is created, returns false if cache entry already
+// exists, returns error if an erro ris encountered
+func (c *Cache) Store(name string, content byte[], timeout int64) (bool, error) {
+	key := hash(name)
+	if c.isValid(key) {
+		return false, nil
+	}
+	loc := c.getFileName(key)
+	os.WriteFile(loc, content, os.FileMode(int(0777)))
+	c.filesMeta[key] := {
+		valid: true
+		lock: sync.RWMutex
+		timeout: time.Now().add(timeout * time.Second)
+	}
+	return true, nil
+}
+
+// if item is in cache, returns item, else returns and empty byte array
+// returns any error ran into
+func (c *Cache) Get(name string) (byte[], error) {
+	key := hash(name)
+	fm = c.filesMeta[key]
+	if !c.isValid(key) {
+		return [], nil
+	}
+	if time.Now().After(fm.timeout) {
+		c.markForCleanup(key)
+		return [], nil
+	}
+	fm.lock.RLock()
+	loc := c.getFileName(key)
+	f, err := os.Open(loc)
+	if err != nil {
+		fm.lock.RUnlock()
+		return [], err
+	}
+	stat, err := f.Stat()
+	if err != nil {
+		os.close(loc)
+		fm.lock.RUnlock()
+		return [], err
+	}
+	bs := make([]byte, stat.Size())
+	_, err := bufio.NewReader(f).Read(bs)
+	if err != nil && err != io.EOF {
+		os.close(loc)
+		fm.lock.RUnlock()
+		return [], err
+	}
+	os.close(loc)
+	fm.lock.RUnlock()
+	return bs, nil
+}
+
+// Removes item from valid return pool and marks it
+// for clean up
+func (c *Cache) Remove(name string) (bool, error) {
+	key := hash(name)
+	val := c.markForCleanup(key)
+	return val
+}
+
+// Returns wheter an item is cached
+func (c *Cache) Present(name string) bool {
+	key := hash(name)
+	return c.isValid(key)
+}
+
+func (c *Cache) isValid(key string) bool {
+	val, ok = c.filesMeta[key]
+	if !ok {
+		return false
+	}
+	return bool(c.filesMeta[key].valid)
+}
+
+func (c *Cache) markForCleanup(key string) bool {
+	fm, ok = c.filesMeta[key]
+	if (!ok) {
+		return false
+	}
+	c.toBeCleaned = append(c.toBeCleaned, key)
+	fm.valid = false
+	return true
+}
+
+func (c *Cahce) clean() error[] {
+	var errs []error
+	for _, key := range c.toBeCleaned {
+		fm = c.fileMeta[key]
+		fm.valid = false
+		fm.Lock()
+		loc := c.getFileName(key)
+		err := os.Remove(loc)
+		if (err != nil) {
+			errs = append(errs, err)
+		}
+		fm.Unlock()
+		delete(c.filesMeta, key)
+	}
+	// Code below is good if we see our cache expanding too much, and want to run on a regular
+	// Time frame but timeouts are checked on retrieval so no out of date elements will be
+	// grabbed. 
+	// c.toBeCleaned = []
+	// timeoutsToDelete []string
+	// now := time.Now()
+	// for key, value := range c.timeout {
+	// 	if now.After(value) {
+	// 		delete(c.valid, key)
+	// 		c.locks[key].Lock()
+	// 		loc := c.getFileName(key)
+	// 		err := os.Remove(loc)
+	// 		if(err != nil) {
+	// 			errs = append(errs, err)
+	// 		}
+	// 		c.locks[key].Unlock()
+	// 		delete(c.locks, key)
+	// 		timeoutsToDelete = append(timeoutsToDelete, key)
+	// 	}
+	// }
+	// for _, key := range timeoutsToDelete {
+	// 	delete(c.timeout, key)
+	// }
+	return errs
+}
+
+func (c *Cache) makeCleaner(rate int64) <-chan struct{}{
+	cleanUpTicker =clean time.newTicker(rate * time.Second) 
+	quit := make(chan struct{})
+	go func() {
+		for {
+			select {
+			case <-cleanUpTicker.C:
+				errs = c.clean()
+				if len(errs) > 0 {
+					// We can talk about handling errors later, but I think in this instance
+					// We could set up a sub protocol to re-init cache
+					panic()
+				}
+			case <-quit:
+				cleanUpTicker.Stop()
+				return
+			}
+		}
+	}()
+	return quit
+}
+
+func (c *Cache) getFileName(key sting) string {
+	var sb = strings.Builder
+	sb.WriteString(c.dir)
+	sb.WriteString(key)
+	return sb.String()
+}
