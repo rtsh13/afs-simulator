@@ -3,13 +3,14 @@ package main
 import (
 	"flag"
 	"log"
+	"strings"
 
 	afs "github.com/afs-simulator/pkg/afs"
 )
 
 func main() {
-	inputDir := flag.String("input", "../../data/input", "Input directory path")
-	outputDir := flag.String("output", "../../data/output", "Output directory path")
+	inputDir := flag.String("input", "data/input", "Input directory path")
+	outputDir := flag.String("output", "data/output", "Output directory path")
 	address := flag.String("addr", ":8080", "Server address")
 	flag.Parse()
 
