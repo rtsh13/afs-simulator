@@ -37,11 +37,12 @@ class CoordinatorProtocol(asyncio.Protocol):
         self.last_heartbeat = None
         self.buffer = b""
         
+    # triggered when worker connects
+    # this function sig is required as part of asyncio library
     def connection_made(self, transport):
-        """Called when a worker connects"""
         self.transport = transport
         self.connected_at = time.time()
-        self.send_message({'type': 'request_id', 'message': 'Provide worker ID'})
+        self.sendMsg({'type': 'request_id', 'message': 'Provide worker ID'})
 
     def data_received(self, data):
         """Process incoming data from worker"""
