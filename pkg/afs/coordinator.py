@@ -1,10 +1,8 @@
-import socket
 import asyncio
 import json
 import os
 import time
-import subprocess
-import sys
+import coordinator_worker_task
 
 WORKER_STATES = {'IDLE': 'idle','BUSY': 'busy','DISCONNECTED': 'disconnected'}
 
@@ -244,7 +242,7 @@ class CoordinatorProtocol(asyncio.Protocol):
     def loadFiles(cls, filenames):
         for filename in filenames:
             cls.task_counter += 1
-            cls.pending_tasks.append(Task(cls.task_counter, filename, priority=0))
+            cls.pending_tasks.append(coordinator_worker_task.Task(cls.task_counter, filename, priority=0))
         
         return len(filenames)
 
@@ -252,7 +250,7 @@ class CoordinatorProtocol(asyncio.Protocol):
     @classmethod
     def addTask(cls, filename, priority=0):
         cls.task_counter += 1
-        task = Task(cls.task_counter, filename, priority)
+        task = coordinator_worker_task.Task(cls.task_counter, filename, priority)
 
         # Insert based on priority
         inserted = False
@@ -394,7 +392,7 @@ class CoordinatorProtocol(asyncio.Protocol):
         # Restore pending tasks
         cls.pending_tasks = []
         for task_data in coordinator_state['pending_tasks']:
-            task = Task(task_data['task_id'], task_data['filename'])
+            task = coordinator_worker_task.Task(task_data['task_id'], task_data['filename'])
             cls.pending_tasks.append(task)
         
         cls.task_counter = coordinator_state['task_counter']
@@ -405,15 +403,7 @@ class CoordinatorProtocol(asyncio.Protocol):
         return True
 
 # think of this as a unit of work that worker will invoke
-class Task(object):
-    def __init__(self, task_id, filename, priority=0):
-        self.task_id = task_id
-        self.filename = filename
-        self.priority = priority
-        self.assignedTo = None
-        self.assignedAt = None
-        self.completed = False
-        self.createdAt = time.time()
+
 
 # start the new coordinator function
 # indefinitely serve requests at port 5000

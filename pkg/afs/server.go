@@ -20,13 +20,6 @@ const (
 	writeOp = "write"
 )
 
-type FileInfo struct {
-	Path         string
-	Version      int64
-	Size         int64
-	LastModified time.Time
-}
-
 type ReplicaServer struct {
 	id          string
 	isPrimary   bool
@@ -45,35 +38,6 @@ type ReplicaServer struct {
 	heartbeatInterval  time.Duration
 	electionTimeout    time.Duration
 	replicaConnections map[string]*rpc.Client
-}
-
-type LogEntry struct {
-	Index     int64
-	Term      int64
-	Operation string
-	Filename  string
-	Content   []byte
-	Timestamp time.Time
-}
-
-type ReplicationRequest struct {
-	Entry LogEntry
-}
-
-type ReplicationResponse struct {
-	Success bool
-	Index   int64
-}
-
-type HeartbeatRequest struct {
-	LeaderID    string
-	CommitIndex int64
-	Timestamp   time.Time
-}
-
-type HeartbeatResponse struct {
-	Success   bool
-	ReplicaID string
 }
 
 // creates a new server that supports replication
