@@ -437,12 +437,12 @@ async def start_coordinator(host='localhost', port=5000):
     async with server:
         await server.serve_forever()
 
-
-async def periodic_snapshot(interval=30):
-    """Take periodic snapshots"""
+# take snapshots every 30 seconds.
+# 30 is arbitiary number, we can tune/arg pass it if needed
+async def periodicSnapshot(interval=30):
     while True:
         await asyncio.sleep(interval)
-        await CoordinatorProtocol.initiate_snapshot()
+        await CoordinatorProtocol.initiateSnapshot()
 
 
 async def main():
@@ -458,12 +458,12 @@ async def main():
     num_files = CoordinatorProtocol.load_files_from_list(test_files)
     print(f"Loaded {num_files} files for processing")
     
-    # Start tasks
-    coordinator_task = asyncio.create_task(start_coordinator())
-    writer_task = asyncio.create_task(CoordinatorProtocol.write_results_to_file())
-    snapshot_task = asyncio.create_task(periodic_snapshot(interval=30))
+    # this kicks of a new bunch of tasks in the main event loop.
+    coordinatorTask = asyncio.create_task(newCoordinator())
+    bufferFlusher = asyncio.create_task(CoordinatorProtocol.flushBuffer())
+    snapshotTask = asyncio.create_task(periodicSnapshot(interval=30))
     
-    await asyncio.gather(coordinator_task, writer_task, snapshot_task)
+    await asyncio.gather(coordinatorTask, bufferFlusher, snapshotTask)
 
 
 if __name__ == "__main__":
