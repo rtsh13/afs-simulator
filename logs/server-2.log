@@ -1,0 +1,14 @@
+2025/11/10 07:09:10 Starting replica server server-2 on :8081
+2025/11/10 07:09:10 Will connect to replicas: [localhost:8080 localhost:8082]
+2025/11/10 07:09:10 Server server-2 starting as BACKUP
+2025/11/10 07:09:10 Replica server server-2 listening on :8081
+2025/11/10 07:09:10 Input directory: data/input
+2025/11/10 07:09:10 Output directory: data/output
+2025/11/10 07:09:10 Primary: false
+2025/11/10 07:09:10 Connected to replica at localhost:8080
+2025/11/10 07:09:10 Connected to replica at localhost:8082
+2025/11/10 07:09:24 Server server-2 detected leader failure (no heartbeat for 5.005s)
+2025/11/10 07:09:24 Server server-2 starting election process...
+2025/11/10 07:09:24 Server server-2 became PRIMARY (via automated election)
+2025/11/10 07:09:26 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 07:09:26 Server server-2 stepping down after receiving heartbeat from Leader 

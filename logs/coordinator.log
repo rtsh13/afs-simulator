@@ -1,48 +1,6 @@
 Loaded 3 files for processing
 Coordinator started on localhost:5000
-Worker worker-2 registered
 Worker worker-1 registered
-Worker worker-3 registered
-Received 27 primes from worker worker-2 for file input_dataset_001.txt
-Received 90 primes from worker worker-3 for file input_dataset_003.txt
+Received 27 primes from worker worker-1 for file input_dataset_001.txt
 Received 73 primes from worker worker-1 for file input_dataset_002.txt
-Initiating snapshot snapshot_1_1762727966
-Collected state from worker worker-2 for snapshot snapshot_1_1762727966
-Collected state from worker worker-1 for snapshot snapshot_1_1762727966
-Collected state from worker worker-3 for snapshot snapshot_1_1762727966
-Snapshot snapshot_1_1762727966 saved to snapshots/snapshot_1_1762727966.json
-Initiating snapshot snapshot_2_1762727998
-Collected state from worker worker-2 for snapshot snapshot_2_1762727998
-Collected state from worker worker-1 for snapshot snapshot_2_1762727998
-Collected state from worker worker-3 for snapshot snapshot_2_1762727998
-Snapshot snapshot_2_1762727998 saved to snapshots/snapshot_2_1762727998.json
-Initiating snapshot snapshot_3_1762728030
-Collected state from worker worker-1 for snapshot snapshot_3_1762728030
-Collected state from worker worker-2 for snapshot snapshot_3_1762728030
-Collected state from worker worker-3 for snapshot snapshot_3_1762728030
-Snapshot snapshot_3_1762728030 saved to snapshots/snapshot_3_1762728030.json
-Initiating snapshot snapshot_4_1762728062
-Collected state from worker worker-3 for snapshot snapshot_4_1762728062
-Collected state from worker worker-1 for snapshot snapshot_4_1762728062
-Collected state from worker worker-2 for snapshot snapshot_4_1762728062
-Snapshot snapshot_4_1762728062 saved to snapshots/snapshot_4_1762728062.json
-Initiating snapshot snapshot_5_1762728094
-Collected state from worker worker-2 for snapshot snapshot_5_1762728094
-Collected state from worker worker-3 for snapshot snapshot_5_1762728094
-Collected state from worker worker-1 for snapshot snapshot_5_1762728094
-Snapshot snapshot_5_1762728094 saved to snapshots/snapshot_5_1762728094.json
-Initiating snapshot snapshot_6_1762728126
-Collected state from worker worker-2 for snapshot snapshot_6_1762728126
-Collected state from worker worker-3 for snapshot snapshot_6_1762728126
-Collected state from worker worker-1 for snapshot snapshot_6_1762728126
-Snapshot snapshot_6_1762728126 saved to snapshots/snapshot_6_1762728126.json
-Initiating snapshot snapshot_7_1762728158
-Collected state from worker worker-1 for snapshot snapshot_7_1762728158
-Collected state from worker worker-2 for snapshot snapshot_7_1762728158
-Collected state from worker worker-3 for snapshot snapshot_7_1762728158
-Snapshot snapshot_7_1762728158 saved to snapshots/snapshot_7_1762728158.json
-Initiating snapshot snapshot_8_1762728190
-Collected state from worker worker-1 for snapshot snapshot_8_1762728190
-Collected state from worker worker-2 for snapshot snapshot_8_1762728190
-Collected state from worker worker-3 for snapshot snapshot_8_1762728190
-Snapshot snapshot_8_1762728190 saved to snapshots/snapshot_8_1762728190.json
+Received 90 primes from worker worker-1 for file input_dataset_003.txt
