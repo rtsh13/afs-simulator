@@ -7,7 +7,6 @@ import os
 import base64
 import hashlib
 
-
 class AFSClient:
     def __init__(self, clientID, cacheDir, replicaAddrs, maxRetries=3, retryDelay=1):
         self.client_id = clientID
@@ -24,8 +23,6 @@ class AFSClient:
         print(f"Cache dir: {cacheDir}")
 
     async def _rpc_call(self, method_name: str, params: dict):
-        """Make JSON-RPC call to Go server with failover and retry logic (Task 2 & 3)."""
-
         for server_addr in self.replica_addrs:
             try:
                 host, port_str = server_addr.split(':')
@@ -64,11 +61,11 @@ class AFSClient:
                     
                     if result is None:
                         # This happens if Go RPC returns a nil or empty response, but no error.
-                        if method_name in ("FileServer.StoreFile", "FileServer.CreateFile"):
+                        if method_name in ("ReplicaServer.StoreFile", "ReplicaServer.CreateFile"):
                             raise Exception(f"NON_NETWORK_FATAL: Empty result for write operation on {server_addr}")
-                        return {} # For other successful operations with no result body
+                        return {}
 
-                    if method_name in ("FileServer.StoreFile", "FileServer.CreateFile") and not result.get('Success', True) and result.get('Error') == "not primary server":
+                    if method_name in ("ReplicaServer.StoreFile", "ReplicaServer.CreateFile") and not result.get('Success', True) and result.get('Error') == "not primary server":
                         print(f"[{method_name}] Replica {server_addr} is a backup. Failing over to next replica...")
                         raise Exception("IS_BACKUP")
                     
@@ -205,7 +202,7 @@ class AFSClient:
         store_req = {
             "ClientID": self.client_id,
             "Filename": filename,
-            "Content": base64.b64encode(content).decode('utf-8')  # Encode to base64
+            "Content": base64.b64encode(content).decode('utf-8')
         }
         
         result = await self._rpc_call("ReplicaServer.StoreFile", store_req)
@@ -219,7 +216,6 @@ class AFSClient:
         print(f"[AFS] Flushed {filename} to server (new version: {new_version})")
 
     async def create(self, filename):
-        """Create new file on server"""
         create_req = {
             "ClientID": self.client_id,
             "Filename": filename
@@ -229,7 +225,6 @@ class AFSClient:
         print(f"[AFS] Created file {filename} on server")
 
     def clear_cache(self):
-        """Clear all cached files"""
         for filename in list(self.cache.keys()):
             cache_path = self._get_cache_path(filename)
             if os.path.exists(cache_path):
@@ -325,7 +320,6 @@ class WorkerClient(object):
             raise
 
     async def disconnect(self):
-        """Disconnect from coordinator"""
         self.running = False
         if self.writer:
             self.writer.close()
@@ -473,7 +467,7 @@ class WorkerClient(object):
             await self.client.close(filename)
             
         except Exception as e:
-            print(f"[Task {task_id}] ✗ Failed: {e}")
+            print(f"[Task {task_id}] Failed: {e}")
             self.tasks_failed += 1
             
             await self.send_message({
@@ -483,7 +477,6 @@ class WorkerClient(object):
             })
 
     async def send_message(self, message):
-        """Send message to coordinator"""
         try:
             data = json.dumps(message) + '\n'
             self.writer.write(data.encode())
