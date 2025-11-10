@@ -9,105 +9,96 @@ import hashlib
 
 
 class AFSClient:
-    def __init__(self, client_id, cache_dir, server_addr="localhost:8080", max_retries=3, retry_delay=1):
-        """
-        Initialize AFS client
+    def __init__(self, clientID, cacheDir, replicaAddrs, maxRetries=3, retryDelay=1):
+        self.client_id = clientID
+        self.cache_dir = cacheDir
+        self.replica_addrs = replicaAddrs
+        self.max_retries = maxRetries
+        self.retry_delay = retryDelay
         
-        Args:
-            client_id: Unique client identifier (e.g., "worker-1")
-            cache_dir: Local directory for cached files (e.g., "/tmp/afs-worker-1")
-            server_addr: AFS server address (e.g., "localhost:8080")
-        """
-        self.client_id = client_id
-        self.cache_dir = cache_dir
-        self.server_addr = server_addr
-        
-        # Parse server address
-        host, port = server_addr.split(':')
-        self.host = host
-        self.port = int(port)
-
-        self.max_retries = max_retries # 3 attempts by default
-        self.retry_delay = retry_delay # 1 second delay
-        
-        # Cache metadata: filename -> CacheEntry
         self.cache = {}
+        os.makedirs(cacheDir, exist_ok=True)
         
-        # Create cache directory
-        os.makedirs(cache_dir, exist_ok=True)
-        
-        print(f"AFS Client {client_id} initialized")
-        print(f"  Server: {server_addr}")
-        print(f"  Cache dir: {cache_dir}")
+        print(f"Client {clientID} initialized")
+        print(f"Servers: {', '.join(self.replica_addrs)}")
+        print(f"Cache dir: {cacheDir}")
 
     async def _rpc_call(self, method_name: str, params: dict):
-        """Make JSON-RPC call to Go server with retry logic (Task 2)."""
+        """Make JSON-RPC call to Go server with failover and retry logic (Task 2 & 3)."""
 
-        for attempt in range(self.max_retries):
+        for server_addr in self.replica_addrs:
             try:
-                # 1. Establish connection (Network operation - primary failure point)
-                reader, writer = await asyncio.open_connection(self.host, self.port)
-                
-                # 2. Build and send request (Non-failure prone)
-                request = {
-                    "method": method_name,
-                    "params": [params],
-                    "id": random.randint(1, 100000)
-                }
-
-                json_request = json.dumps(request)
-                writer.write(json_request.encode('utf-8'))
-                await writer.drain()
-
-                # 3. Read response and close (Network operation)
-                data = await reader.read(10 * 1024 * 1024)
-                writer.close()
-                await writer.wait_closed()
-                
-                if not data:
-                    raise Exception("Empty response from server")
-
-                response = json.loads(data.decode('utf-8'))
-                
-                # 4. Check for errors (Application-level)
-                if response.get("error"):
-                    raise Exception(f"RPC Error: {response['error'].get('message', 'Unknown')}")
-                
-                result = response.get("result")
-                if not result or not result.get('Success', True):
-                     raise Exception(result.get('Error', 'Operation failed'))
-
-                return result
-                
-            except (ConnectionRefusedError, ConnectionResetError, TimeoutError, OSError) as e:
-                # Catch network-related exceptions (server down/unreachable)
-                if attempt < self.max_retries - 1:
-                    print(f"[{method_name}] Connection failed (Attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {self.retry_delay}s...")
-                    await asyncio.sleep(self.retry_delay)
-                else:
-                    # Final attempt failed
-                    print(f"[{method_name}] All {self.max_retries} attempts failed.")
-                    # Re-raise the exception, which will be caught by process_file
-                    raise Exception(f"Server Unreachable after {self.max_retries} attempts.")
+                host, port_str = server_addr.split(':')
+                port = int(port_str)
+            except ValueError:
+                print(f"Skipping invalid replica address: {server_addr}")
+                continue 
             
-            except Exception as e:
-                # Catch all other exceptions (JSONDecodeError, unexpected failure) immediately
-                raise Exception(f"RPC call failed ({method_name}): {e}")
+            for attempt in range(self.max_retries):
+                try:
+                    reader, writer = await asyncio.open_connection(host, port)
+                    
+                    request = {
+                        "method": method_name,
+                        "params": [params],
+                        "id": random.randint(1, 100000)
+                    }
 
+                    json_request = json.dumps(request)
+                    writer.write(json_request.encode('utf-8'))
+                    await writer.drain()
+
+                    data = await reader.read(10 * 1024 * 1024)
+                    writer.close()
+                    await writer.wait_closed()
+                    
+                    if not data:
+                        raise Exception("Empty response from server")
+
+                    response = json.loads(data.decode('utf-8'))
+                    
+                    if response.get("error"):
+                        raise Exception(f"RPC Error: {response['error'].get('message', 'Unknown')}")
+                    
+                    result = response.get("result")
+                    
+                    if result is None:
+                        # This happens if Go RPC returns a nil or empty response, but no error.
+                        if method_name in ("FileServer.StoreFile", "FileServer.CreateFile"):
+                            raise Exception(f"NON_NETWORK_FATAL: Empty result for write operation on {server_addr}")
+                        return {} # For other successful operations with no result body
+
+                    if method_name in ("FileServer.StoreFile", "FileServer.CreateFile") and not result.get('Success', True) and result.get('Error') == "not primary server":
+                        print(f"[{method_name}] Replica {server_addr} is a backup. Failing over to next replica...")
+                        raise Exception("IS_BACKUP")
+                    
+                    if not result.get('Success', True):
+                        raise Exception(result.get('Error', 'Operation failed'))
+
+                    return result 
+                    
+                except (ConnectionRefusedError, ConnectionResetError, TimeoutError, OSError) as e:
+                    if attempt < self.max_retries - 1:
+                        print(f"[{method_name}] Connection failed on {server_addr} (Attempt {attempt + 1}/{self.max_retries}): {e}. Retrying in {self.retry_delay}s...")
+                        await asyncio.sleep(self.retry_delay)
+                        continue 
+                    else:
+                        print(f"[{method_name}] All {self.max_retries} attempts failed on {server_addr}. Trying next replica...")
+                        break
+
+                except Exception as e:
+                    if str(e) == "IS_BACKUP":
+                        break 
+                    
+                    print(f"[{method_name}] Fatal RPC error on {server_addr}: {e}. Trying next replica...")
+                    break
+            
+        raise Exception("System Unreachable: All replicas failed.")
+    
     def _get_cache_path(self, filename):
-        """Get local cache file path"""
         return os.path.join(self.cache_dir, filename)
 
     async def open(self, filename):
-        """
-        Open file (Task 1B: Caching)
-        
-        Process:
-        1. Check if file is in cache
-        2. If cached, validate with TestAuth
-        3. If cache invalid or not cached, fetch from server
-        4. Store in local cache
-        """
         print(f"[AFS] Opening {filename}...")
         
         cache_path = self._get_cache_path(filename)
@@ -116,72 +107,58 @@ class AFSClient:
         if filename in self.cache:
             print(f"[AFS] File {filename} found in cache, validating...")
             
-            # Validate cache with TestAuth RPC
-            cached_version = self.cache[filename]['version']
-            
-            auth_req = {
-                "ClientID": self.client_id,
-                "Filename": filename,
-                "Version": cached_version
-            }
+            # what if someone deleted/modified the file on server end?
+            # does it make sense to use the cached file on client end? no
+            # we are verifying this via TestAuth
+            cachedVno = self.cache[filename]['version']
             
             try:
-                auth_resp = await self._rpc_call("FileServer.TestAuth", auth_req)
+                resp = await self._rpc_call("ReplicaServer.TestAuth", 
+                    {"ClientID": self.client_id,"Filename": filename,"Version": cachedVno})
                 
-                if auth_resp.get('Valid'):
-                    print(f"[AFS] Cache valid for {filename} (version {cached_version})")
-                    # Read from local cache
+                if resp.get('Valid'):
+                    print(f"[AFS] Cache valid for {filename} (version {cachedVno})")
                     with open(cache_path, 'rb') as f:
                         content = f.read()
                     return content
+                
+                # the cache got stale
                 else:
-                    print(f"[AFS] Cache stale for {filename}, fetching fresh copy...")
+                    print(f"[AFS] Cache stale for {filename}, fetching fresh copy")
+
+            # in all other conditions, always try to fetch new copy
             except Exception as e:
-                print(f"[AFS] TestAuth failed: {e}, fetching fresh copy...")
+                print(f"[AFS] TestAuth failed: {e}, fetching fresh copy")
         
-        # Fetch from server
         print(f"[AFS] Fetching {filename} from server...")
         content = await self._fetch_from_server(filename)
         
         return content
 
     async def _fetch_from_server(self, filename):
-        """
-        Fetch entire file from server (Task 1A: RPC)
-        Implements whole-file caching
-        """
-        fetch_req = {
-            "ClientID": self.client_id,
-            "Filename": filename
-        }
+        result = await self._rpc_call("ReplicaServer.FetchFile", 
+                {"ClientID": self.client_id,"Filename": filename})
         
-        result = await self._rpc_call("FileServer.FetchFile", fetch_req)
-        
-        # Decode base64 content (Go []byte is base64-encoded in JSON)
+        # server gives back []bytes
+        # hence we decode it
         content_bytes = base64.b64decode(result['Content'])
         version = result['Version']
         
-        # Store in local cache file
+        # storing the buffer ie /tmp folder
         cache_path = self._get_cache_path(filename)
         with open(cache_path, 'wb') as f:
             f.write(content_bytes)
         
-        # Update cache metadata
-        self.cache[filename] = {
-            'version': version,
-            'path': cache_path,
-            'dirty': False,
-            'size': len(content_bytes)
-        }
+        # update cache metadata
+        self.cache[filename] = {'version': version,'path': cache_path,'dirty': False,'size': len(content_bytes)}
         
         print(f"[AFS] Cached {filename} (version {version}, {len(content_bytes)} bytes)")
         
         return content_bytes
 
+    # write to cache and mark is dirty
+    # it will be flused
     async def write(self, filename, content):
-        """
-        Write to file (marks as dirty for flush on close)
-        """
         cache_path = self._get_cache_path(filename)
         
         # Write to local cache
@@ -201,12 +178,8 @@ class AFSClient:
         
         print(f"[AFS] Wrote {len(content)} bytes to {filename} (dirty, will flush on close)")
 
+    # flush to server
     async def close(self, filename):
-        """
-        Close file (Task 1B: Flush on close if modified)
-        
-        If file was modified (dirty), flush to server
-        """
         if filename not in self.cache:
             print(f"[AFS] File {filename} not open, nothing to close")
             return
@@ -223,7 +196,6 @@ class AFSClient:
         print(f"[AFS] Closed {filename}")
 
     async def _flush_to_server(self, filename):
-        """Flush modified file back to server"""
         cache_path = self._get_cache_path(filename)
         
         # Read from local cache
@@ -236,7 +208,7 @@ class AFSClient:
             "Content": base64.b64encode(content).decode('utf-8')  # Encode to base64
         }
         
-        result = await self._rpc_call("FileServer.StoreFile", store_req)
+        result = await self._rpc_call("ReplicaServer.StoreFile", store_req)
         
         new_version = result['NewVersion']
         
@@ -253,7 +225,7 @@ class AFSClient:
             "Filename": filename
         }
         
-        await self._rpc_call("FileServer.CreateFile", create_req)
+        await self._rpc_call("ReplicaServer.CreateFile", create_req)
         print(f"[AFS] Created file {filename} on server")
 
     def clear_cache(self):
@@ -266,31 +238,28 @@ class AFSClient:
         print(f"[AFS] Cache cleared")
 
 
+# worker finds prime numbers
+# it is also repsonsible for implementing the snapshots
 class WorkerClient(object):
-    """
-    Worker that finds prime numbers using AFS for file access
-    Implements Chandy-Lamport snapshots (Task 5)
-    """
-
-    def __init__(self, worker_id, afs_server="localhost:8080", k=5):
-        self.worker_id = worker_id
-        self.reader = None
-        self.writer = None
+    def __init__(self, workerID, serverAddrs, k=5):
+        self.workerID = workerID
+        self.reader = None # this is referring to StreamReader
+        self.writer = None # this is referring to StreamWriter
         self.running = False
-        self.buffer = b""
+        self.buffer = b"" # empty byte string
         self.tasks_processed = 0
         self.tasks_failed = 0
         self.k = k  # Miller-Rabin iterations
         
-        # Initialize AFS client with caching
-        cache_dir = f"/tmp/afs-{worker_id}"
-        self.afs_client = AFSClient(worker_id, cache_dir, afs_server)
+        # requirement for caching files on disk
+        # won't be stored in the cwd
+        cacheDir = f"/tmp/afs-{workerID}"
+        self.client = AFSClient(workerID, cacheDir, serverAddrs)
         
         # Snapshot state
-        self.snapshot_state = {}
+        self.snapshotState = {}
 
     def _power(self, a, n, p):
-        """Compute (a^n) % p using fast exponentiation"""
         result = 1
         a = a % p
         while n > 0:
@@ -301,7 +270,6 @@ class WorkerClient(object):
         return result
 
     def _miller_rabin(self, n):
-        """Miller-Rabin primality test"""
         if n < 2:
             return False
         if n == 2 or n == 3:
@@ -333,21 +301,20 @@ class WorkerClient(object):
         return True
 
     def _is_prime(self, n):
-        """Check if n is prime"""
         return self._miller_rabin(n)
 
+    # connect to the running coordinator
     async def connect(self, host='localhost', port=5000):
-        """Connect to coordinator"""
         try:
             self.reader, self.writer = await asyncio.open_connection(host, port)
             self.running = True
             
-            print(f"\n{'='*60}")
-            print(f"Worker {self.worker_id} started")
-            print(f"  Coordinator: {host}:{port}")
-            print(f"  AFS Server: {self.afs_client.server_addr}")
-            print(f"  Cache: {self.afs_client.cache_dir}")
-            print(f"{'='*60}\n")
+            print(f"\n{'='*50}")
+            print(f"Worker {self.workerID} started")
+            print(f"Coordinator: {host}:{port}")
+            print(f"AFS Servers: {', '.join(self.client.replica_addrs)}") 
+            print(f"Cache: {self.client.cache_dir}")
+            print(f"{'='*50}\n")
             
             # Start background tasks
             asyncio.create_task(self.handle_messages())
@@ -365,55 +332,55 @@ class WorkerClient(object):
             await self.writer.wait_closed()
 
     async def handle_messages(self):
-        """Handle incoming messages from coordinator"""
         while self.running:
             try:
+                # pull just 4KB worth of data from network pipe
+                # you can pull more, i just wrote 4KB for now
                 data = await self.reader.read(4096)
                 if not data:
                     print("Connection closed by coordinator")
                     self.running = False
                     break
-
+                
                 self.buffer += data
+
+                # keep reading from pipe until newspace is encountered
                 while b'\n' in self.buffer:
                     line, self.buffer = self.buffer.split(b'\n', 1)
                     try:
                         message = json.loads(line.decode())
-                        await self.process_message(message)
+                        await self.msgRouter(message)
                     except (json.JSONDecodeError, Exception) as e:
-                        print(f"Error processing message: {e}")
+                        print(f"error processing message: {e}")
                         
             except Exception as e:
-                print(f"Error in handle_messages: {e}")
+                print(f"error in handle_messages: {e}")
                 self.running = False
                 break
 
-    async def process_message(self, message):
-        """Route messages to appropriate handlers"""
-        msg_type = message.get('type')
+    # this is a message router. it performs certain ops based on type of message
+    # think of this as mux router if I wrote this in go
+    async def msgRouter(self, message):
+        msgType = message.get('type')
         
-        if msg_type == 'request_id':
-            await self.handle_request_id(message)
-        elif msg_type == 'registered':
-            print(f"Registered with coordinator as {self.worker_id}")
-        elif msg_type == 'task_assignment':
-            await self.handle_task_assignment(message)
-        elif msg_type == 'heartbeat_ack':
-            pass  # Heartbeat acknowledged
-        elif msg_type == 'snapshot_marker':
-            await self.handle_snapshot_marker(message)
-        elif msg_type == 'status':
+        if msgType == 'heartbeat_ack':
+            pass
+        elif msgType == 'request_id':
+            await self.requestIDHandler(message)
+        elif msgType == 'task_assignment':
+            await self.taskAssignmentHandler(message)
+        elif msgType == 'snapshot_marker':
+            await self.spanshotMarkerHandler(message)
+        elif msgType == 'status':
             print(f"Status update: {message}")
+        elif msgType == 'registered':
+            print(f"registered with coordinator as {self.workerID}")
 
-    async def handle_request_id(self, message):
-        """Respond to ID request from coordinator"""
-        await self.send_message({
-            'type': 'register',
-            'worker_id': self.worker_id
-        })
+    # respond to coordinator's request to send the worker id
+    async def requestIDHandler(self, message):
+        await self.send_message({'type': 'register','worker_id': self.workerID})
 
-    async def handle_task_assignment(self, message):
-        """Handle new task assignment"""
+    async def taskAssignmentHandler(self, message):
         task_id = message.get('task_id')
         filename = message.get('filename')
         
@@ -424,18 +391,18 @@ class WorkerClient(object):
         # Process file asynchronously
         asyncio.create_task(self.process_file(task_id, filename))
 
-    async def handle_snapshot_marker(self, message):
-        """Handle snapshot marker (Chandy-Lamport)"""
+    # handle the broadcast marker request and respond back the state of the worker
+    async def spanshotMarkerHandler(self, message):
         snapshot_id = message.get('snapshot_id')
         
         print(f"Snapshot marker received: {snapshot_id}")
         
         # Save local state
         state = {
-            'worker_id': self.worker_id,
+            'worker_id': self.workerID,
             'tasks_processed': self.tasks_processed,
             'tasks_failed': self.tasks_failed,
-            'cache_files': list(self.afs_client.cache.keys()),
+            'cache_files': list(self.client.cache.keys()),
             'timestamp': time.time()
         }
         
@@ -443,32 +410,24 @@ class WorkerClient(object):
         await self.send_message({
             'type': 'snapshot_state',
             'snapshot_id': snapshot_id,
-            'worker_id': self.worker_id,
+            'worker_id': self.workerID,
             'state': state
         })
 
     async def process_file(self, task_id, filename):
-        """
-        Process a file to find prime numbers
-        Uses AFS client with caching
-        """
         try:
             start_time = time.time()
             
-            print(f"--- SIMULATION DELAY: Waiting 20s before RPC for server kill ---")
-            await asyncio.sleep(20)
-
             # Open file via AFS (with caching)
-            print(f"[Task {task_id}] Opening {filename} via AFS...")
-            content_bytes = await self.afs_client.open(filename)
+            print(f"[Task {task_id}] Opening {filename} via AFS..")
+            bytesResp = await self.client.open(filename)
             
             # Decode and parse
-            content = content_bytes.decode('utf-8')
+            content = bytesResp.decode('utf-8')
             
             if not content.strip():
                 raise Exception(f"File is empty: {filename}")
-            
-            # Parse numbers
+        
             numbers = []
             for line in content.split('\n'):
                 line = line.strip()
@@ -495,7 +454,7 @@ class WorkerClient(object):
                 'task_id': task_id,
                 'filename': filename,
                 'primes': primes,
-                'worker_id': self.worker_id
+                'worker_id': self.workerID
             })
             
             self.tasks_processed += 1
@@ -511,7 +470,7 @@ class WorkerClient(object):
             print(f"{'='*60}\n")
             
             # Close file (flushes if modified)
-            await self.afs_client.close(filename)
+            await self.client.close(filename)
             
         except Exception as e:
             print(f"[Task {task_id}] ✗ Failed: {e}")
@@ -532,47 +491,43 @@ class WorkerClient(object):
         except Exception as e:
             print(f"Error sending message: {e}")
 
+    # show face to the professor?
+    # send hearbeat msgs to the coordinator to let it know you're alive
     async def send_heartbeat(self):
-        """Send periodic heartbeat to coordinator"""
         while self.running:
             await asyncio.sleep(5)
             if self.running:
-                await self.send_message({
-                    'type': 'heartbeat',
-                    'worker_id': self.worker_id
-                })
-
+                await self.send_message({'type': 'heartbeat','worker_id': self.workerID})
 
 async def main():
-    """Main entry point"""
+    # pull the worker-id
     if len(sys.argv) > 1:
-        worker_id = sys.argv[1]
+        workerID = sys.argv[1]
     else:
-        worker_id = f"worker-{random.randint(1000, 9999)}"
+        workerID = f"worker-{random.randint(1000, 9999)}"
 
-    # AFS server address
-    afs_server = sys.argv[2] if len(sys.argv) > 2 else "localhost:8080"
+    # pull the replica addresses
+    if len(sys.argv) > 2:
+        serversAddrs = sys.argv[2].split(',')
+    else:
+        serversAddrs = ["localhost:8080"]
     
-    # Miller-Rabin iterations
-    k = int(sys.argv[3]) if len(sys.argv) > 3 else 5
+    #pull the milner's number
+    k = int(sys.argv[3]) if len(sys.argv) > 3 else 5 
 
-    worker = WorkerClient(worker_id, afs_server, k)
+    worker = WorkerClient(workerID, serversAddrs, k)
 
     try:
         await worker.connect()
-        
-        # Keep running
         while worker.running:
             await asyncio.sleep(1)
-            
     except KeyboardInterrupt:
-        print(f"\n{worker_id} shutting down...")
+        print(f"\n{workerID} shutting down.")
     except Exception as e:
         print(f"Error: {e}")
     finally:
         await worker.disconnect()
-        print(f"{worker_id} stopped")
-
+        print(f"{workerID} stopped")
 
 if __name__ == "__main__":
     asyncio.run(main())
