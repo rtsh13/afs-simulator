@@ -81,20 +81,33 @@ func NewReplicaServer(id, inputDir, outputDir string, replicaAddrs []string) (*R
 	if _, err := os.Stat(inputDir); os.IsNotExist(err) {
 		return nil, fmt.Errorf("input directory does not exist: %s", inputDir)
 	}
+
 	if _, err := os.Stat(outputDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(outputDir, 0755); err != nil {
 			return nil, fmt.Errorf("failed to create output directory: %v", err)
 		}
 	}
 
-	fs := &FileServer{
-		inputDir:  inputDir,
-		outputDir: outputDir,
-		files:     make(map[string]*FileInfo),
+	// adding random delay to avoid leader election clash
+	randDelay := time.Duration(rand.Intn(1000)) * time.Millisecond
+
+	r := &ReplicaServer{
+		id:                 id,
+		isPrimary:          false,
+		inputDir:           inputDir,
+		outputDir:          outputDir,
+		replicaAddr:        replicaAddrs,
+		files:              make(map[string]*FileInfo),
+		replicationLog:     make([]LogEntry, 0),
+		logIndex:           0,
+		commitIndex:        0,
+		heartbeatInterval:  time.Second * 2,
+		electionTimeout:    time.Second*5 + randDelay,
+		lastHeartbeat:      time.Now(),
+		replicaConnections: make(map[string]*rpc.Client),
 	}
 
-	// Initialize file registry
-	if err := fs.scanDirectory(inputDir); err != nil {
+	if err := r.scanDirectory(inputDir); err != nil {
 		return nil, err
 	}
 
