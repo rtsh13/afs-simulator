@@ -360,7 +360,7 @@ class CoordinatorProtocol(asyncio.Protocol):
         msg = {'type': 'snapshot_marker','snapshot_id': snapshot_id}
         
         for worker in cls.workers.values():
-            worker.send_message(msg)
+            worker.sendMsg(msg)
         
         await asyncio.sleep(2)
         
