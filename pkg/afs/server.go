@@ -149,12 +149,11 @@ func (r *ReplicaServer) scanDirectory(dir string) error {
 		return err
 	}
 
-	fs.fileMutex.Lock()
-	defer fs.fileMutex.Unlock()
+	r.fileMutex.Lock()
+	defer r.fileMutex.Unlock()
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
-			// Get FileInfo to access Size() and ModTime()
 			info, err := entry.Info()
 			if err != nil {
 				log.Printf("Warning: failed to get info for %s: %v", entry.Name(), err)
@@ -162,7 +161,7 @@ func (r *ReplicaServer) scanDirectory(dir string) error {
 			}
 
 			fullPath := filepath.Join(dir, entry.Name())
-			fs.files[entry.Name()] = &FileInfo{
+			r.files[entry.Name()] = &FileInfo{
 				Path:         fullPath,
 				Version:      1,
 				Size:         info.Size(),
@@ -184,9 +183,9 @@ func (fs *FileServer) GetDirectories(req *utils.GetDirectoriesRequest, resp *uti
 func (fs *FileServer) Open(req *utils.OpenRequest, resp *utils.OpenResponse) error {
 	log.Printf("Client %s opening file: %s (mode: %s)", req.ClientID, req.Filename, req.Mode)
 
-	fs.fileMutex.RLock()
-	fileInfo, exists := fs.files[req.Filename]
-	fs.fileMutex.RUnlock()
+	r.fileMutex.RLock()
+	fileInfo, exists := r.files[req.Filename]
+	r.fileMutex.RUnlock()
 
 	if !exists {
 		resp.Success = false
@@ -208,9 +207,9 @@ func (fs *FileServer) Open(req *utils.OpenRequest, resp *utils.OpenResponse) err
 func (fs *FileServer) FetchFile(req *utils.FetchFileRequest, resp *utils.FetchFileResponse) error {
 	log.Printf("Client %s fetching file: %s", req.ClientID, req.Filename)
 
-	fs.fileMutex.RLock()
-	fileInfo, exists := fs.files[req.Filename]
-	fs.fileMutex.RUnlock()
+	r.fileMutex.RLock()
+	fileInfo, exists := r.files[req.Filename]
+	r.fileMutex.RUnlock()
 
 	if !exists {
 		resp.Success = false
@@ -269,16 +268,14 @@ func (fs *FileServer) StoreFile(req *utils.StoreFileRequest, resp *utils.StoreFi
 		return nil
 	}
 
-	// Update metadata
-	fs.fileMutex.Lock()
-	if fileInfo, exists := fs.files[req.Filename]; exists {
+	r.fileMutex.Lock()
+	if fileInfo, exists := r.files[req.Filename]; exists {
 		fileInfo.Version++
 		fileInfo.Size = int64(len(req.Content))
 		fileInfo.LastModified = time.Now()
 		resp.NewVersion = fileInfo.Version
 	} else {
-		// New file
-		fs.files[req.Filename] = &FileInfo{
+		r.files[req.Filename] = &FileInfo{
 			Path:         targetPath,
 			Version:      1,
 			Size:         int64(len(req.Content)),
@@ -286,7 +283,7 @@ func (fs *FileServer) StoreFile(req *utils.StoreFileRequest, resp *utils.StoreFi
 		}
 		resp.NewVersion = 1
 	}
-	fs.fileMutex.Unlock()
+	r.fileMutex.Unlock()
 
 	resp.Success = true
 	return nil
@@ -295,7 +292,13 @@ func (fs *FileServer) StoreFile(req *utils.StoreFileRequest, resp *utils.StoreFi
 func (fs *FileServer) CreateFile(req *utils.CreateFileRequest, resp *utils.CreateFileResponse) error {
 	log.Printf("Client %s creating file: %s", req.ClientID, req.Filename)
 
-	targetPath := filepath.Join(fs.outputDir, req.Filename)
+	if !r.isPrimary {
+		resp.Success = false
+		resp.Error = "not primary server"
+		return nil
+	}
+
+	targetPath := filepath.Join(r.outputDir, req.Filename)
 
 	// Create empty file
 	file, err := os.Create(targetPath)
@@ -306,15 +309,14 @@ func (fs *FileServer) CreateFile(req *utils.CreateFileRequest, resp *utils.Creat
 	}
 	file.Close()
 
-	// Add to registry
-	fs.fileMutex.Lock()
-	fs.files[req.Filename] = &FileInfo{
+	r.fileMutex.Lock()
+	r.files[req.Filename] = &FileInfo{
 		Path:         targetPath,
 		Version:      1,
 		Size:         0,
 		LastModified: time.Now(),
 	}
-	fs.fileMutex.Unlock()
+	r.fileMutex.Unlock()
 
 	resp.Success = true
 	return nil
