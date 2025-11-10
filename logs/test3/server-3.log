@@ -1,0 +1,26 @@
+2025/11/10 08:41:27 Starting replica server server-3 on :8082
+2025/11/10 08:41:27 Will connect to replicas: [localhost:8080 localhost:8081]
+2025/11/10 08:41:27 Server server-3 starting as BACKUP
+2025/11/10 08:41:27 Replica server server-3 listening on :8082
+2025/11/10 08:41:27 Input directory: data/input
+2025/11/10 08:41:27 Output directory: data/output
+2025/11/10 08:41:27 Primary: false
+2025/11/10 08:41:27 Connected to replica at localhost:8081
+2025/11/10 08:41:27 Connected to replica at localhost:8080
+2025/11/10 08:41:53 Server server-3 detected leader failure (no heartbeat for 5.661s)
+2025/11/10 08:41:53 Server server-3 starting election process...
+2025/11/10 08:41:53 Server server-3 became PRIMARY (via automated election)
+2025/11/10 08:41:55 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:41:57 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:41:59 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:01 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:03 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:05 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:07 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:09 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:11 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:13 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:15 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:17 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:19 Heartbeat to localhost:8080 failed: connection is shut down
+2025/11/10 08:42:21 Heartbeat to localhost:8080 failed: connection is shut down

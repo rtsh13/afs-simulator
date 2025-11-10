@@ -1,0 +1,9 @@
+2025/11/10 08:39:32 Starting replica server server-3 on :8082
+2025/11/10 08:39:32 Will connect to replicas: [localhost:8080 localhost:8081]
+2025/11/10 08:39:32 Server server-3 starting as BACKUP
+2025/11/10 08:39:32 Replica server server-3 listening on :8082
+2025/11/10 08:39:32 Input directory: data/input
+2025/11/10 08:39:32 Output directory: data/output
+2025/11/10 08:39:32 Primary: false
+2025/11/10 08:39:32 Connected to replica at localhost:8081
+2025/11/10 08:39:32 Connected to replica at localhost:8080

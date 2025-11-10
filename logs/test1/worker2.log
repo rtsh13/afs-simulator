@@ -1,0 +1,28 @@
+Client worker-2 initialized
+Servers: localhost:8080, localhost:8081, localhost:8082
+Cache dir: /tmp/afs-worker-2
+
+==================================================
+Worker worker-2 started
+Coordinator: localhost:5000
+AFS Servers: localhost:8080, localhost:8081, localhost:8082
+Cache: /tmp/afs-worker-2
+==================================================
+
+registered with coordinator as worker-2
+
+============================================================
+Task 3 assigned: input_dataset_003.txt
+============================================================
+[Task 3] Opening input_dataset_003.txt via AFS..
+[AFS] Opening input_dataset_003.txt...
+[AFS] Fetching input_dataset_003.txt from server...
+[AFS] Cached input_dataset_003.txt (version 1, 337 bytes)
+[Task 3] Processing 90 numbers...
+[Task 3] Complete: 90/90 primes found in 0.00s
+============================================================
+
+[AFS] File input_dataset_003.txt clean, no flush needed
+[AFS] Closed input_dataset_003.txt
+Snapshot marker received: snapshot_1_1762764004
+Connection closed by coordinator

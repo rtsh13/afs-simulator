@@ -1,0 +1,10 @@
+Loaded 3 files for processing
+Coordinator started on localhost:5000
+Worker worker-1 registered
+Worker worker-2 registered
+Received 27 primes from worker worker-1 for file input_dataset_001.txt
+Received 73 primes from worker worker-2 for file input_dataset_002.txt
+Received 90 primes from worker worker-1 for file input_dataset_003.txt
+Collected state from worker worker-2 for snapshot snapshot_1_1762764119
+Collected state from worker worker-1 for snapshot snapshot_1_1762764119
+snapshot snapshot_1_1762764119 saved to snapshots/snapshot_1_1762764119.json
