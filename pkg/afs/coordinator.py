@@ -107,10 +107,10 @@ class CoordinatorProtocol(asyncio.Protocol):
         self.sendMsg({'type': 'registered', 'worker_id': self.wID})
         self.assignTask()
 
-    def handle_heartbeat(self, message):
-        """Acknowledge worker heartbeat"""
+    # acknowledge the heartbeat of the worker
+    def heartbeatHandler(self, message):
         self.last_heartbeat = time.time()
-        self.send_message({'type': 'heartbeat_ack', 'timestamp': time.time()})
+        self.sendMsg({'type': 'heartbeat_ack', 'timestamp': time.time()})
 
     def handle_task_complete(self, message):
         """Handle task completion"""
