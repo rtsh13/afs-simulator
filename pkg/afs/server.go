@@ -9,7 +9,6 @@ import (
 	"net/rpc"
 	"net/rpc/jsonrpc"
 	"os"
-	"path/filepath"
 	"sync"
 	"time"
 
@@ -23,12 +22,8 @@ const (
 type ReplicaServer struct {
 	id          string
 	isPrimary   bool
-	inputDir    string
-	outputDir   string
 	replicaAddr []string
-
-	fileMutex sync.RWMutex
-	files     map[string]*FileInfo
+	afsServer   *AfsServer
 
 	replicationLog     []LogEntry
 	replicationMutex   sync.Mutex
@@ -41,16 +36,7 @@ type ReplicaServer struct {
 }
 
 // creates a new server that supports replication
-func NewReplicaServer(id, inputDir, outputDir string, replicaAddrs []string) (*ReplicaServer, error) {
-	if _, err := os.Stat(inputDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("input directory does not exist: %s", inputDir)
-	}
-
-	if _, err := os.Stat(outputDir); os.IsNotExist(err) {
-		if err := os.MkdirAll(outputDir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create output directory: %v", err)
-		}
-	}
+func NewReplicaServer(id, workingDir string, replicaAddrs []string) (*ReplicaServer, error) {
 
 	// adding random delay to avoid leader election clash
 	randDelay := time.Duration(rand.Intn(2000)) * time.Millisecond
@@ -58,10 +44,7 @@ func NewReplicaServer(id, inputDir, outputDir string, replicaAddrs []string) (*R
 	r := &ReplicaServer{
 		id:                 id,
 		isPrimary:          false,
-		inputDir:           inputDir,
-		outputDir:          outputDir,
 		replicaAddr:        replicaAddrs,
-		files:              make(map[string]*FileInfo),
 		replicationLog:     make([]LogEntry, 0),
 		logIndex:           0,
 		commitIndex:        0,
@@ -71,9 +54,11 @@ func NewReplicaServer(id, inputDir, outputDir string, replicaAddrs []string) (*R
 		replicaConnections: make(map[string]*rpc.Client),
 	}
 
-	if err := r.scanDirectory(inputDir); err != nil {
+	afs, err := NewAfsServer(workingDir)
+	if err != nil {
 		return nil, err
 	}
+	r.afsServer = afs
 
 	// spawn a go routine to connect to replication servers
 	go r.connectToReplicas()
@@ -105,35 +90,6 @@ func (r *ReplicaServer) connectToReplicas() {
 			}
 		}(addr)
 	}
-}
-
-func (r *ReplicaServer) scanDirectory(dir string) error {
-	entries, err := os.ReadDir(dir)
-	if err != nil {
-		return err
-	}
-
-	r.fileMutex.Lock()
-	defer r.fileMutex.Unlock()
-
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			info, err := entry.Info()
-			if err != nil {
-				log.Printf("Warning: failed to get info for %s: %v", entry.Name(), err)
-				continue
-			}
-
-			fullPath := filepath.Join(dir, entry.Name())
-			r.files[entry.Name()] = &FileInfo{
-				Path:         fullPath,
-				Version:      1,
-				Size:         info.Size(),
-				LastModified: info.ModTime(),
-			}
-		}
-	}
-	return nil
 }
 
 // once all servers are up based on user flag, the server becomes PRIMARY
@@ -178,25 +134,10 @@ func (r *ReplicaServer) monitorHeartbeat() {
 // RPC method that just checks if the file exists
 func (r *ReplicaServer) Open(req *utils.OpenRequest, resp *utils.OpenResponse) error {
 	log.Printf("Client %s opening file: %s (mode: %s)", req.ClientID, req.Filename, req.Mode)
-
-	r.fileMutex.RLock()
-	fileInfo, exists := r.files[req.Filename]
-	r.fileMutex.RUnlock()
-
-	if !exists {
-		resp.Success = false
-		resp.Error = "file not found"
-		return nil
+	err := r.afsServer.Open(req, resp)
+	if err != nil {
+		return err
 	}
-
-	resp.Success = true
-	resp.Metadata = utils.FileMetadata{
-		Filename:     req.Filename,
-		Size:         fileInfo.Size,
-		Version:      fileInfo.Version,
-		LastModified: fileInfo.LastModified,
-	}
-
 	return nil
 }
 
@@ -305,64 +246,26 @@ func (r *ReplicaServer) replicateToBackups(entry LogEntry) error {
 
 // RPC to replicate the data
 func (r *ReplicaServer) Replicate(req *ReplicationRequest, resp *ReplicationResponse) error {
-	entry := req.Entry
 
-	switch entry.Operation {
-	case writeOp:
-		targetPath := filepath.Join(r.outputDir, entry.Filename)
-		if err := os.WriteFile(targetPath, entry.Content, 0644); err != nil {
-			resp.Success = false
-			return err
-		}
-
-		r.fileMutex.Lock()
-		if fileInfo, exists := r.files[entry.Filename]; exists {
-			fileInfo.Version++
-			fileInfo.Size = int64(len(entry.Content))
-			fileInfo.LastModified = time.Now()
-		} else {
-			r.files[entry.Filename] = &FileInfo{
-				Path:         targetPath,
-				Version:      1,
-				Size:         int64(len(entry.Content)),
-				LastModified: time.Now(),
-			}
-		}
-		r.fileMutex.Unlock()
+	entry, err := r.afsServer.Replicate(req, resp)
+	if err != nil {
+		return err
 	}
 
 	r.replicationMutex.Lock()
 	r.replicationLog = append(r.replicationLog, entry)
 	r.replicationMutex.Unlock()
-
-	resp.Success = true
-	resp.Index = entry.Index
 	return nil
 }
 
 func (r *ReplicaServer) FetchFile(req *utils.FetchFileRequest, resp *utils.FetchFileResponse) error {
 	log.Printf("Client %s fetching file: %s", req.ClientID, req.Filename)
 
-	r.fileMutex.RLock()
-	fileInfo, exists := r.files[req.Filename]
-	r.fileMutex.RUnlock()
+	err := r.afsServer.FetchFile(req, resp)
 
-	if !exists {
-		resp.Success = false
-		resp.Error = "file not found"
-		return nil
-	}
-
-	content, err := os.ReadFile(fileInfo.Path)
 	if err != nil {
-		resp.Success = false
-		resp.Error = fmt.Sprintf("failed to read file: %v", err)
-		return nil
+		return err
 	}
-
-	resp.Success = true
-	resp.Content = content
-	resp.Version = fileInfo.Version
 	return nil
 }
 
@@ -387,47 +290,19 @@ func (r *ReplicaServer) StoreFile(req *utils.StoreFileRequest, resp *utils.Store
 		return nil
 	}
 
-	targetPath := filepath.Join(r.outputDir, req.Filename)
-	if err := os.WriteFile(targetPath, req.Content, 0644); err != nil {
-		resp.Success = false
-		resp.Error = fmt.Sprintf("failed to write file: %v", err)
-		return nil
+	err := r.afsServer.StoreFile(req, resp)
+	if err != nil {
+		return err
 	}
-
-	r.fileMutex.Lock()
-	if fileInfo, exists := r.files[req.Filename]; exists {
-		fileInfo.Version++
-		fileInfo.Size = int64(len(req.Content))
-		fileInfo.LastModified = time.Now()
-		resp.NewVersion = fileInfo.Version
-	} else {
-		r.files[req.Filename] = &FileInfo{
-			Path:         targetPath,
-			Version:      1,
-			Size:         int64(len(req.Content)),
-			LastModified: time.Now(),
-		}
-		resp.NewVersion = 1
-	}
-	r.fileMutex.Unlock()
-
-	resp.Success = true
 	return nil
 }
 
 // RPC to test the validity of a dirty file
 func (r *ReplicaServer) TestAuth(req *utils.TestAuthRequest, resp *utils.TestAuthResponse) error {
-	r.fileMutex.RLock()
-	fileInfo, exists := r.files[req.Filename]
-	r.fileMutex.RUnlock()
-
-	if !exists {
-		resp.Valid = false
-		return nil
+	err := r.afsServer.TestAuth(req, resp)
+	if err != nil {
+		return err
 	}
-
-	resp.Valid = (fileInfo.Version == req.Version)
-	resp.Version = fileInfo.Version
 	return nil
 }
 
@@ -441,26 +316,10 @@ func (r *ReplicaServer) CreateFile(req *utils.CreateFileRequest, resp *utils.Cre
 		return nil
 	}
 
-	targetPath := filepath.Join(r.outputDir, req.Filename)
-
-	file, err := os.Create(targetPath)
+	err := r.afsServer.CreateFile(req, resp)
 	if err != nil {
-		resp.Success = false
-		resp.Error = fmt.Sprintf("failed to create file: %v", err)
-		return nil
+		return err
 	}
-	file.Close()
-
-	r.fileMutex.Lock()
-	r.files[req.Filename] = &FileInfo{
-		Path:         targetPath,
-		Version:      1,
-		Size:         0,
-		LastModified: time.Now(),
-	}
-	r.fileMutex.Unlock()
-
-	resp.Success = true
 	return nil
 }
 
@@ -470,7 +329,7 @@ func (r *ReplicaServer) GetStatus(req *struct{}, resp *map[string]interface{}) e
 	status["is_primary"] = r.isPrimary
 	status["log_index"] = r.logIndex
 	status["commit_index"] = r.commitIndex
-	status["files"] = len(r.files)
+	status["files"] = r.afsServer.GetFilesLen()
 	status["replicas_connected"] = len(r.replicaConnections)
 
 	*resp = status
@@ -485,11 +344,6 @@ func (r *ReplicaServer) Start(address string) error {
 		return fmt.Errorf("failed to listen: %v", err)
 	}
 
-	log.Printf("Replica server %s listening on %s", r.id, address)
-	log.Printf("Input directory: %s", r.inputDir)
-	log.Printf("Output directory: %s", r.outputDir)
-	log.Printf("Primary: %v", r.isPrimary)
-
 	go r.monitorHeartbeat()
 
 	for {
@@ -503,9 +357,9 @@ func (r *ReplicaServer) Start(address string) error {
 }
 
 func (r *ReplicaServer) SaveSnapshot(filename string) error {
-	r.fileMutex.RLock()
+	r.afsServer.RLockFileMutex()
 	r.replicationMutex.Lock()
-	defer r.fileMutex.RUnlock()
+	defer r.afsServer.RUnlockFileMutex()
 	defer r.replicationMutex.Unlock()
 
 	snapshot := map[string]interface{}{
@@ -513,7 +367,7 @@ func (r *ReplicaServer) SaveSnapshot(filename string) error {
 		"is_primary":   r.isPrimary,
 		"log_index":    r.logIndex,
 		"commit_index": r.commitIndex,
-		"files":        r.files,
+		"files":        r.afsServer.getFiles(),
 		"log":          r.replicationLog,
 		"timestamp":    time.Now(),
 	}

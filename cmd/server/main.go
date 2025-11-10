@@ -9,8 +9,7 @@ import (
 )
 
 func main() {
-	inputDir := flag.String("input", "data/input", "Input directory path")
-	outputDir := flag.String("output", "data/output", "Output directory path")
+	workingDir := flag.String("working", "data", "Working directory path")
 	address := flag.String("addr", ":8080", "Server address")
 
 	id := flag.String("id", "server-default", "Unique Server ID")
@@ -34,7 +33,7 @@ func main() {
 	log.Printf("Starting replica server %s on %s", *id, *address)
 	log.Printf("Will connect to replicas: %v", replicaAddrs)
 
-	server, err := afs.NewReplicaServer(*id, *inputDir, *outputDir, replicaAddrs)
+	server, err := afs.NewReplicaServer(*id, *workingDir, replicaAddrs)
 	if err != nil {
 		log.Fatalf("Failed to create replica server: %v", err)
 	}
