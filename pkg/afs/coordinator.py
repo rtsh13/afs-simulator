@@ -81,31 +81,31 @@ class CoordinatorProtocol(asyncio.Protocol):
         msg_type = message.get('type')
         
         if msg_type == 'register':
-            self.handle_register(message)
+            self.registerHandler(message)
         elif msg_type == 'heartbeat':
-            self.handle_heartbeat(message)
+            self.heartbeatHandler(message)
         elif msg_type == 'task_complete':
-            self.handle_task_complete(message)
+            self.taskCompletionHandler(message)
         elif msg_type == 'task_failed':
-            self.handle_task_failed(message)
+            self.taskFailedHandler(message)
         elif msg_type == 'primes_result':
-            self.handle_primes_result(message)
+            self.primesHandler(message)
         elif msg_type == 'status_request':
-            self.handle_status_request()
-        elif msg_type == 'snapshot_marker':
-            self.handle_snapshot_marker(message)
+            self.statusHandler()
+        # elif msg_type == 'snapshot_marker':
+        #     self.snapshotStateMarker(message)
         elif msg_type == 'snapshot_state':
-            self.handle_snapshot_state(message)
+            self.snapshotStateHandler(message)
 
-    def handle_register(self, message):
-        """Register a new worker"""
-        self.worker_id = message.get('worker_id')
-        CoordinatorProtocol.workers[self.worker_id] = self
-        self.worker_state = WORKER_STATES['IDLE']
+    # spawn a new worker and keep it IDLE
+    def registerHandler(self, message):
+        self.wID = message.get('worker_id')
+        CoordinatorProtocol.workers[self.wID] = self
+        self.wState = WORKER_STATES['IDLE']
         
-        print(f"Worker {self.worker_id} registered")
-        self.send_message({'type': 'registered', 'worker_id': self.worker_id})
-        self.try_assign_task()
+        print(f"Worker {self.wID} registered")
+        self.sendMsg({'type': 'registered', 'worker_id': self.wID})
+        self.assignTask()
 
     def handle_heartbeat(self, message):
         """Acknowledge worker heartbeat"""
