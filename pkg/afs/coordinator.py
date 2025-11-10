@@ -151,103 +151,106 @@ class CoordinatorProtocol(asyncio.Protocol):
         id = message.get('task_id')
         filename = message.get('filename')
         primes = message.get('primes', [])
-        worker_id = message.get('worker_id')
+        wID = message.get('worker_id')
 
-        result_data = {
-            'task_id': task_id,
-            'filename': filename,
-            'primes': primes,
-            'worker_id': worker_id,
+        data = {
+            'task_id': id,'filename': filename,
+            'primes': primes,'worker_id': wID,
             'timestamp': time.time()
         }
 
-        CoordinatorProtocol.write_buffer.append(result_data)
-        print(f"Received {len(primes)} primes from worker {worker_id} for file {filename}")
+        CoordinatorProtocol.buffer_writer.append(data)
+        print(f"Received {len(primes)} primes from worker {wID} for file {filename}")
 
-    def handle_status_request(self):
-        """Send current status to worker"""
+    def statusHandler(self):
         status = {
             'type': 'status',
             'workers': len(CoordinatorProtocol.workers),
             'pending_tasks': len(CoordinatorProtocol.pending_tasks),
             'completed_tasks': len(CoordinatorProtocol.completed_tasks),
-            'buffer_size': len(CoordinatorProtocol.write_buffer),
-            'your_state': self.worker_state,
-            'your_tasks_completed': self.tasks_completed
+            'buffer_size': len(CoordinatorProtocol.buffer_writer),
+            'your_state': self.wState,
+            'your_tasks_completed': self.completed_tasks
         }
-        self.send_message(status)
+        self.sendMsg(status)
 
-    def handle_snapshot_marker(self, message):
-        """Handle snapshot marker from worker (Chandy-Lamport)"""
-        snapshot_id = message.get('snapshot_id')
-        worker_id = message.get('worker_id')
+    # broadcast all connected workers
+    # if not in map, append to snapshot states
+    def snapshotStateMarker(self, message):
+        sID = message.get('snapshot_id')
+        wID = message.get('worker_id')
         
-        if snapshot_id not in CoordinatorProtocol.snapshot_states:
-            CoordinatorProtocol.snapshot_states[snapshot_id] = {
+        if sID not in CoordinatorProtocol.snapshot_states:
+            CoordinatorProtocol.snapshot_states[sID] = {
                 'workers': {},
                 'channels': {},
                 'timestamp': time.time()
             }
         
-        print(f"Received snapshot marker {snapshot_id} from worker {worker_id}")
+        print(f"Received snapshot marker {sID} from worker {wID}")
 
-    def handle_snapshot_state(self, message):
-        """Collect worker state for snapshot"""
-        snapshot_id = message.get('snapshot_id')
-        worker_id = message.get('worker_id')
+    # collects the worker snapshot state response
+    def snapshotStateHandler(self, message):
+        sID = message.get('snapshot_id')
+        wID = message.get('worker_id')
         state = message.get('state')
         
-        if snapshot_id in CoordinatorProtocol.snapshot_states:
-            CoordinatorProtocol.snapshot_states[snapshot_id]['workers'][worker_id] = state
-            print(f"Collected state from worker {worker_id} for snapshot {snapshot_id}")
+        if sID in CoordinatorProtocol.snapshot_states:
+            CoordinatorProtocol.snapshot_states[sID]['workers'][wID] = state
+            print(f"Collected state from worker {wID} for snapshot {sID}")
 
-    def try_assign_task(self):
-        """Assign a task to this worker if idle"""
-        if self.worker_state != WORKER_STATES['IDLE']:
+    # only assign task if the worker is IDLE
+    # pop from queue and send message to worker to start working
+    # update state to BUSY
+    # pie in sky: add concurrency to the worker to process more than one task?
+    def assignTask(self):
+        if self.wState != WORKER_STATES['IDLE']:
             return
         if not CoordinatorProtocol.pending_tasks:
             return
 
         task = CoordinatorProtocol.pending_tasks.pop(0)
-        task.assigned_to = self.worker_id
+        task.assigned_to = self.wID
         task.assigned_at = time.time()
         self.current_task = task
-        self.worker_state = WORKER_STATES['BUSY']
+        self.wState = WORKER_STATES['BUSY']
 
-        self.send_message({
+        self.sendMsg({
             'type': 'task_assignment',
             'task_id': task.task_id,
             'filename': task.filename,
             'priority': task.priority
         })
 
-    def send_message(self, message):
-        """Send message to worker"""
+    # coordinator sends arbitiary message to worker
+    def sendMsg(self, message):
         try:
             data = json.dumps(message) + '\n'
             self.transport.write(data.encode())
         except Exception as e:
             print(f"Error sending message: {e}")
 
+    # starts the primes.txt file fresh since its opens with 'w' mode
     @classmethod
-    def initialize_files(cls, output_file):
+    def initializeFiles(cls, output_file):
         cls.output_file = output_file
         
         with open(output_file, 'w') as f:
             pass
 
+    # we are parsing the filenames and spinning one Task for each file
+    # the tasks are duly noted in the pending tasks watcher
     @classmethod
-    def load_files_from_list(cls, filenames):
+    def loadFiles(cls, filenames):
         for filename in filenames:
             cls.task_counter += 1
-            task = Task(cls.task_counter, filename, priority=0)
-            cls.pending_tasks.append(task)
+            cls.pending_tasks.append(Task(cls.task_counter, filename, priority=0))
         
         return len(filenames)
 
+    # adds task in the task pending queue
     @classmethod
-    def add_task(cls, filename, priority=0):
-        """Add a new task with priority"""
+    def addTask(cls, filename, priority=0):
         cls.task_counter += 1
         task = Task(cls.task_counter, filename, priority)
 
@@ -262,11 +265,13 @@ class CoordinatorProtocol(asyncio.Protocol):
         if not inserted:
             cls.pending_tasks.append(task)
 
-        cls.assign_task_with_load_balancing()
+        cls.loadbalance()
         return task.task_id
 
+    # load balances task assignment
+    # assigns the tasks to the work with the least amount of 
     @classmethod
-    def assign_task_with_load_balancing(cls):
+    def loadbalance(cls):
         """Assign tasks to least loaded worker"""
         if not cls.pending_tasks:
             return
@@ -278,33 +283,36 @@ class CoordinatorProtocol(asyncio.Protocol):
 
         # Find worker with fewest completed tasks
         best_worker = min(idle_workers, key=lambda w: w.tasks_completed)
-        best_worker.try_assign_task()
+        best_worker.assignTask()
 
     @classmethod
-    async def write_results_to_file(cls):
-        """Background task to write buffered results to file"""
-        seen_primes = set()
+    # write items from the buffer to the file to maintain persistence
+    async def flushBuffer(cls):
+        existingPrimes = set()
         
         while True:
+            # btw this is not same as time.sleep(0.5).
+            # this tells the event loop to take .5 second shift in focus and peform other ops
             await asyncio.sleep(0.5)
 
-            if cls.write_buffer:
-                async with cls.write_lock:
-                    if cls.write_buffer:
-                        results_to_write = cls.write_buffer[:]
-                        cls.write_buffer.clear()
+            if cls.buffer_writer:
+                # we synchronise with others since buffer is shared resource
+                async with cls.writer_lock:
+                    if cls.buffer_writer:
+                        results_to_write = cls.buffer_writer[:]
+                        cls.buffer_writer.clear()
 
+                        # append, not overrwite
                         with open(cls.output_file, 'a') as f:
                             for result in results_to_write:
-                                # Write unique primes only
                                 for prime in result['primes']:
-                                    if prime not in seen_primes:
+                                    if prime not in existingPrimes:
                                         f.write(f"{prime}\n")
-                                        seen_primes.add(prime)
+                                        existingPrimes.add(prime)
 
     @classmethod
     def get_system_status(cls):
-        """Get comprehensive system status"""
+
         worker_stats = {}
         for worker_id, worker in cls.workers.items():
             if worker.connected_at:
@@ -330,46 +338,33 @@ class CoordinatorProtocol(asyncio.Protocol):
         }
         return status
 
+    # this is your chandy-lamport snapshot algo
     @classmethod
-    async def initiate_snapshot(cls):
-        """Initiate Chandy-Lamport snapshot"""
+    async def initiateSnapshot(cls):
         cls.snapshot_counter += 1
+        
+        #snapshot_counter_time is name of the snapshot time
         snapshot_id = f"snapshot_{cls.snapshot_counter}_{int(time.time())}"
         cls.current_snapshot_id = snapshot_id
         cls.snapshot_in_progress = True
         
-        print(f"Initiating snapshot {snapshot_id}")
-        
-        # Save coordinator state
+        # save the local coordinator state in the dict
         coordinator_state = {
-            'pending_tasks': [{'task_id': t.task_id, 'filename': t.filename} 
-                            for t in cls.pending_tasks],
-            'completed_tasks': [{'task_id': t.task_id, 'filename': t.filename} 
-                              for t in cls.completed_tasks[-100:]],
+            'pending_tasks': [{'task_id': t.task_id, 'filename': t.filename} for t in cls.pending_tasks],
+            'completed_tasks': [{'task_id': t.task_id, 'filename': t.filename} for t in cls.completed_tasks[-50:]],
             'task_counter': cls.task_counter,
             'workers': list(cls.workers.keys())
         }
         
-        cls.snapshot_states[snapshot_id] = {
-            'coordinator': coordinator_state,
-            'workers': {},
-            'timestamp': time.time()
-        }
-        
-        # Send marker to all workers
-        marker_message = {
-            'type': 'snapshot_marker',
-            'snapshot_id': snapshot_id
-        }
+        cls.snapshot_states[snapshot_id] = {'coordinator': coordinator_state,'workers': {},'timestamp': time.time()}
+        msg = {'type': 'snapshot_marker','snapshot_id': snapshot_id}
         
         for worker in cls.workers.values():
-            worker.send_message(marker_message)
+            worker.send_message(msg)
         
-        # Wait for worker states
         await asyncio.sleep(2)
         
-        # Save snapshot to file
-        cls.save_snapshot(snapshot_id)
+        cls.save(snapshot_id)
         cls.snapshot_in_progress = False
 
     # Save snapshot to file
