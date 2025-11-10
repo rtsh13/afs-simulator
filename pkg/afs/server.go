@@ -89,7 +89,7 @@ func NewReplicaServer(id, inputDir, outputDir string, replicaAddrs []string) (*R
 	}
 
 	// adding random delay to avoid leader election clash
-	randDelay := time.Duration(rand.Intn(1000)) * time.Millisecond
+	randDelay := time.Duration(rand.Intn(2000)) * time.Millisecond
 
 	r := &ReplicaServer{
 		id:                 id,
