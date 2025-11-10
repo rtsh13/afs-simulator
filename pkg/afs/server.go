@@ -172,15 +172,47 @@ func (r *ReplicaServer) scanDirectory(dir string) error {
 	return nil
 }
 
-// RPC Methods
-func (fs *FileServer) GetDirectories(req *utils.GetDirectoriesRequest, resp *utils.GetDirectoriesResponse) error {
-	log.Printf("Client %s requesting directories", req.ClientID)
-	resp.InputDir = fs.inputDir
-	resp.OutputDir = fs.outputDir
-	return nil
+// once all servers are up based on user flag, the server becomes PRIMARY
+func (r *ReplicaServer) BecomePrimary() {
+	r.isPrimary = true
+	log.Printf("Server %s became PRIMARY", r.id)
+	go r.sendHeartbeats()
 }
 
-func (fs *FileServer) Open(req *utils.OpenRequest, resp *utils.OpenResponse) error {
+// upon PRIMARY failing, the replica is elected as PRIMARY
+// throws heartbeat to rest replicas to assert dominance
+func (r *ReplicaServer) electPrimary() {
+	log.Printf("Server %s starting election process...", r.id)
+
+	r.isPrimary = true
+	r.lastHeartbeat = time.Now()
+	log.Printf("Server %s became PRIMARY (via automated election)", r.id)
+
+	go r.sendHeartbeats()
+}
+
+// monitors the last heartbeat of the replicas
+// lets assume the PRIMARY died
+// it would trigger that condition since the electred timeout will supersed lasthearbeat
+func (r *ReplicaServer) monitorHeartbeat() {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if r.isPrimary {
+			continue
+		}
+
+		if time.Since(r.lastHeartbeat) > r.electionTimeout {
+			log.Printf("Server %s detected leader failure (no heartbeat for %v)", r.id, r.electionTimeout)
+			r.electPrimary()
+			return
+		}
+	}
+}
+
+// RPC method that just checks if the file exists
+func (r *ReplicaServer) Open(req *utils.OpenRequest, resp *utils.OpenResponse) error {
 	log.Printf("Client %s opening file: %s (mode: %s)", req.ClientID, req.Filename, req.Mode)
 
 	r.fileMutex.RLock()
