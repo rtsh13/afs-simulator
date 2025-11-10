@@ -490,8 +490,21 @@ func (fs *FileServer) CreateFile(req *utils.CreateFileRequest, resp *utils.Creat
 	return nil
 }
 
-func (fs *FileServer) Start(address string) error {
-	rpc.Register(fs)
+func (r *ReplicaServer) GetStatus(req *struct{}, resp *map[string]interface{}) error {
+	status := make(map[string]interface{})
+	status["id"] = r.id
+	status["is_primary"] = r.isPrimary
+	status["log_index"] = r.logIndex
+	status["commit_index"] = r.commitIndex
+	status["files"] = len(r.files)
+	status["replicas_connected"] = len(r.replicaConnections)
+
+	*resp = status
+	return nil
+}
+
+func (r *ReplicaServer) Start(address string) error {
+	rpc.Register(r)
 
 	listener, err := net.Listen("tcp", address)
 	if err != nil {
