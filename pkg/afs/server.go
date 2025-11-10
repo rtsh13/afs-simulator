@@ -1,31 +1,24 @@
 package afs
 
 import (
+	"encoding/json"
 	"fmt"
 	"log"
+	"math/rand"
 	"net"
 	"net/rpc"
+	"net/rpc/jsonrpc"
 	"os"
 	"path/filepath"
 	"sync"
 	"time"
 
-	"net/rpc/jsonrpc"
-
 	utils "github.com/afs-simulator/pkg/utils"
 )
 
-type FileServer struct {
-	inputDir  string
-	outputDir string
-
-	// File registry with metadata
-	fileMutex sync.RWMutex
-	files     map[string]*FileInfo
-
-	// Track open files per client
-	// openFiles sync.Map // map[clientID]map[filename]bool //gotta figure this out // clientid-filehandleid-isOpen
-}
+const (
+	writeOp = "write"
+)
 
 type FileInfo struct {
 	Path         string
@@ -34,8 +27,57 @@ type FileInfo struct {
 	LastModified time.Time
 }
 
-func NewFileServer(inputDir, outputDir string) (*FileServer, error) {
-	// Validate directories exist
+type ReplicaServer struct {
+	id          string
+	isPrimary   bool
+	inputDir    string
+	outputDir   string
+	replicaAddr []string
+
+	fileMutex sync.RWMutex
+	files     map[string]*FileInfo
+
+	replicationLog     []LogEntry
+	replicationMutex   sync.Mutex
+	logIndex           int64
+	commitIndex        int64
+	lastHeartbeat      time.Time
+	heartbeatInterval  time.Duration
+	electionTimeout    time.Duration
+	replicaConnections map[string]*rpc.Client
+}
+
+type LogEntry struct {
+	Index     int64
+	Term      int64
+	Operation string
+	Filename  string
+	Content   []byte
+	Timestamp time.Time
+}
+
+type ReplicationRequest struct {
+	Entry LogEntry
+}
+
+type ReplicationResponse struct {
+	Success bool
+	Index   int64
+}
+
+type HeartbeatRequest struct {
+	LeaderID    string
+	CommitIndex int64
+	Timestamp   time.Time
+}
+
+type HeartbeatResponse struct {
+	Success   bool
+	ReplicaID string
+}
+
+// creates a new server that supports replication
+func NewReplicaServer(id, inputDir, outputDir string, replicaAddrs []string) (*ReplicaServer, error) {
 	if _, err := os.Stat(inputDir); os.IsNotExist(err) {
 		return nil, fmt.Errorf("input directory does not exist: %s", inputDir)
 	}
