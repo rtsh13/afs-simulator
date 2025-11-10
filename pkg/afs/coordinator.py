@@ -112,21 +112,25 @@ class CoordinatorProtocol(asyncio.Protocol):
         self.last_heartbeat = time.time()
         self.sendMsg({'type': 'heartbeat_ack', 'timestamp': time.time()})
 
-    def handle_task_complete(self, message):
-        """Handle task completion"""
+    # handle tasks being completed by the worker
+    # throw them into IDLE state and see a new task
+    def taskCompletionHandler(self, message):
         task_id = message.get('task_id')
         if self.current_task and self.current_task.task_id == task_id:
             self.current_task.completed = True
             CoordinatorProtocol.completed_tasks.append(self.current_task)
             self.current_task = None
-            self.tasks_completed += 1
+            self.completed_tasks += 1
             
-        self.worker_state = WORKER_STATES['IDLE']
-        self.try_assign_task()
+        self.wState = WORKER_STATES['IDLE']
+        self.assignTask()
 
-    def handle_task_failed(self, message):
-        """Handle task failure - reassign task"""
-        task_id = message.get('task_id')
+    # handle tasks being failed by the worker
+    # assign new task
+    # pie in the sky: add analytics to this to identify if a worker is crashing way too often
+        # avoid assigning tasks based on predictions
+    def taskFailedHandler(self, message):
+        id = message.get('task_id')
         error = message.get('error', 'Unknown error')
         
         print(f"Task {task_id} failed on worker {self.worker_id}: {error}")
