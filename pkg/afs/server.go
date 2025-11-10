@@ -236,7 +236,147 @@ func (r *ReplicaServer) Open(req *utils.OpenRequest, resp *utils.OpenResponse) e
 	return nil
 }
 
-func (fs *FileServer) FetchFile(req *utils.FetchFileRequest, resp *utils.FetchFileResponse) error {
+// only PRIMARY can send hearbeats
+// helps PRIMARY keep replicas in consistent state
+func (r *ReplicaServer) sendHeartbeats() {
+	ticker := time.NewTicker(r.heartbeatInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		if !r.isPrimary {
+			return
+		}
+
+		r.replicationMutex.Lock()
+
+		// loop over all listed replicas, and send heartbeats to record their health
+		for addr, client := range r.replicaConnections {
+			go func(address string, rpcClient *rpc.Client) {
+				req := &HeartbeatRequest{
+					// commit index always tells the current state of the replica
+					// think of it always catching up with the log index
+					CommitIndex: r.commitIndex,
+					Timestamp:   time.Now(),
+				}
+
+				resp := &HeartbeatResponse{}
+
+				// call the rpc to see liveliness
+				if err := rpcClient.Call("ReplicaServer.Heartbeat", req, resp); err != nil {
+					log.Printf("Heartbeat to %s failed: %v", address, err)
+				}
+			}(addr, client)
+		}
+		r.replicationMutex.Unlock()
+	}
+}
+
+// this is a RPC for heartbeat to be only invoked via RPC call from PRIMARY
+func (r *ReplicaServer) Heartbeat(req *HeartbeatRequest, resp *HeartbeatResponse) error {
+	if r.isPrimary {
+		log.Printf("Server %s stepping down after receiving heartbeat from Leader %s", r.id, req.LeaderID)
+	}
+
+	r.isPrimary = false
+	r.lastHeartbeat = time.Now()
+	r.commitIndex = req.CommitIndex
+
+	resp.Success = true
+	resp.ReplicaID = r.id
+	return nil
+}
+
+// for write ops, we replicate to backups
+// incase the PRIMARY dies before the replication is done, the system in in inconsistent state
+// the next elected PRIMARY starts from a different log index as opposed to what we thought(maybe 5 but it starts at 4)
+// this is acceptable because we aren't following WAL ideology before commiting to the file content on disk
+func (r *ReplicaServer) replicateToBackups(entry LogEntry) error {
+	if !r.isPrimary {
+		return fmt.Errorf("only primary can replicate")
+	}
+
+	r.replicationMutex.Lock()
+	// the log index is incremented before storing to the disk to capture the op
+	r.logIndex++
+	entry.Index = r.logIndex
+	r.replicationLog = append(r.replicationLog, entry)
+	r.replicationMutex.Unlock()
+
+	var wg sync.WaitGroup
+	successCount := 1
+	var countMutex sync.Mutex
+
+	for addr, client := range r.replicaConnections {
+		wg.Add(1)
+		go func(address string, rpcClient *rpc.Client) {
+			defer wg.Done()
+
+			resp := &ReplicationResponse{}
+
+			if err := rpcClient.Call("ReplicaServer.Replicate",
+				&ReplicationRequest{Entry: entry}, resp); err != nil {
+				log.Printf("Replication to %s failed: %v", address, err)
+			} else if resp.Success {
+				countMutex.Lock()
+				successCount++
+				countMutex.Unlock()
+			}
+		}(addr, client)
+	}
+
+	wg.Wait()
+
+	// we update the commit index to the current log index if the all replicas have synced
+	majority := (len(r.replicaConnections) + 1) / 2
+	if successCount >= majority {
+		r.replicationMutex.Lock()
+		r.commitIndex = entry.Index
+		r.replicationMutex.Unlock()
+		return nil
+	}
+
+	return fmt.Errorf("replication failed: only %d/%d replicas acknowledged",
+		successCount, len(r.replicaConnections)+1)
+}
+
+// RPC to replicate the data
+func (r *ReplicaServer) Replicate(req *ReplicationRequest, resp *ReplicationResponse) error {
+	entry := req.Entry
+
+	switch entry.Operation {
+	case writeOp:
+		targetPath := filepath.Join(r.outputDir, entry.Filename)
+		if err := os.WriteFile(targetPath, entry.Content, 0644); err != nil {
+			resp.Success = false
+			return err
+		}
+
+		r.fileMutex.Lock()
+		if fileInfo, exists := r.files[entry.Filename]; exists {
+			fileInfo.Version++
+			fileInfo.Size = int64(len(entry.Content))
+			fileInfo.LastModified = time.Now()
+		} else {
+			r.files[entry.Filename] = &FileInfo{
+				Path:         targetPath,
+				Version:      1,
+				Size:         int64(len(entry.Content)),
+				LastModified: time.Now(),
+			}
+		}
+		r.fileMutex.Unlock()
+	}
+
+	r.replicationMutex.Lock()
+	r.replicationLog = append(r.replicationLog, entry)
+	r.replicationMutex.Unlock()
+
+	resp.Success = true
+	resp.Index = entry.Index
+	return nil
+}
+
+func (r *ReplicaServer) FetchFile(req *utils.FetchFileRequest, resp *utils.FetchFileResponse) error {
 	log.Printf("Client %s fetching file: %s", req.ClientID, req.Filename)
 
 	r.fileMutex.RLock()
@@ -276,24 +416,20 @@ func (fs *FileServer) TestAuth(req *utils.TestAuthRequest, resp *utils.TestAuthR
 		return nil
 	}
 
-	resp.Valid = (fileInfo.Version == req.Version)
-	resp.Version = fileInfo.Version
-	return nil
-}
-
-func (fs *FileServer) StoreFile(req *utils.StoreFileRequest, resp *utils.StoreFileResponse) error {
-	log.Printf("Client %s storing file: %s (%d bytes)",
-		req.ClientID, req.Filename, len(req.Content))
-
-	// Determine which directory to use
-	var targetPath string
-	if req.Filename == "primes.txt" {
-		targetPath = filepath.Join(fs.outputDir, req.Filename)
-	} else {
-		targetPath = filepath.Join(fs.inputDir, req.Filename)
+	entry := LogEntry{
+		Operation: writeOp,
+		Filename:  req.Filename,
+		Content:   req.Content,
+		Timestamp: time.Now(),
 	}
 
-	// Write file
+	if err := r.replicateToBackups(entry); err != nil {
+		resp.Success = false
+		resp.Error = fmt.Sprintf("replication failed: %v", err)
+		return nil
+	}
+
+	targetPath := filepath.Join(r.outputDir, req.Filename)
 	if err := os.WriteFile(targetPath, req.Content, 0644); err != nil {
 		resp.Success = false
 		resp.Error = fmt.Sprintf("failed to write file: %v", err)
