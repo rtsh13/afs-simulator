@@ -389,7 +389,6 @@ func (r *ReplicaServer) FetchFile(req *utils.FetchFileRequest, resp *utils.Fetch
 		return nil
 	}
 
-	// Read file content
 	content, err := os.ReadFile(fileInfo.Path)
 	if err != nil {
 		resp.Success = false
@@ -403,16 +402,11 @@ func (r *ReplicaServer) FetchFile(req *utils.FetchFileRequest, resp *utils.Fetch
 	return nil
 }
 
-func (fs *FileServer) TestAuth(req *utils.TestAuthRequest, resp *utils.TestAuthResponse) error {
-	log.Printf("Client %s testing auth for file: %s (version: %d)",
-		req.ClientID, req.Filename, req.Version)
-
-	fs.fileMutex.RLock()
-	fileInfo, exists := fs.files[req.Filename]
-	fs.fileMutex.RUnlock()
-
-	if !exists {
-		resp.Valid = false
+// store the updated file on disk
+func (r *ReplicaServer) StoreFile(req *utils.StoreFileRequest, resp *utils.StoreFileResponse) error {
+	if !r.isPrimary {
+		resp.Success = false
+		resp.Error = "not primary server"
 		return nil
 	}
 
