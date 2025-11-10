@@ -36,7 +36,14 @@ func main() {
 
 	server, err := afs.NewReplicaServer(*id, *inputDir, *outputDir, replicaAddrs)
 	if err != nil {
-		log.Fatalf("Failed to create server: %v", err)
+		log.Fatalf("Failed to create replica server: %v", err)
+	}
+
+	if *isPrimaryFlag {
+		log.Printf("Server %s starting as PRIMARY", *id)
+		server.BecomePrimary()
+	} else {
+		log.Printf("Server %s starting as BACKUP", *id)
 	}
 
 	log.Fatal(server.Start(*address))
