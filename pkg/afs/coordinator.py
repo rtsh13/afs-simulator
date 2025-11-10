@@ -44,16 +44,19 @@ class CoordinatorProtocol(asyncio.Protocol):
         self.connected_at = time.time()
         self.sendMsg({'type': 'request_id', 'message': 'Provide worker ID'})
 
+    # process responses from worker 
+    # this function sig is required as part of asyncio library
     def data_received(self, data):
-        """Process incoming data from worker"""
         self.buffer += data
+
+        # we look for newline to stop processing a message
         while b'\n' in self.buffer:
             line, self.buffer = self.buffer.split(b'\n', 1)
             try:
                 message = json.loads(line.decode())
-                self.process_message(message)
+                self.processMsg(message)
             except (json.JSONDecodeError, Exception) as e:
-                print(f"Error parsing message: {e}")
+                print(f"Errror parsing message: {e}")
 
     def connection_lost(self, exc):
         """Handle worker disconnection"""
