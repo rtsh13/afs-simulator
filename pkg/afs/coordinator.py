@@ -446,16 +446,15 @@ async def periodicSnapshot(interval=30):
 
 
 async def main():
-    """Main entry point"""
     output_file = "primes.txt"
     
-    # Initialize
-    CoordinatorProtocol.initialize_files(output_file)
-    
-    # For testing - create some dummy tasks
-    # In production, these would come from AFS
+    # helps clean prime txt file
+    CoordinatorProtocol.initializeFiles(output_file)
+
+    # we are assuming only 3 files exist that we need to work on. 
+    # technically, this should be pulled from AFS workspace but for simplicity we hardcode it
     test_files = ["input_dataset_001.txt", "input_dataset_002.txt", "input_dataset_003.txt"]
-    num_files = CoordinatorProtocol.load_files_from_list(test_files)
+    num_files = CoordinatorProtocol.loadFiles(test_files)
     print(f"Loaded {num_files} files for processing")
     
     # this kicks of a new bunch of tasks in the main event loop.
