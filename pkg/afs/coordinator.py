@@ -58,11 +58,12 @@ class CoordinatorProtocol(asyncio.Protocol):
             except (json.JSONDecodeError, Exception) as e:
                 print(f"Errror parsing message: {e}")
 
+    # handles the conn being dropped off from the worker
+    # this function sig is required as part of asyncio library
     def connection_lost(self, exc):
-        """Handle worker disconnection"""
-        if self.worker_id:
-            print(f"Worker {self.worker_id} disconnected")
-            self.worker_state = WORKER_STATES['DISCONNECTED']
+        if self.wID:
+            print(f"Worker {self.wID} disconnected")
+            self.wState = WORKER_STATES['DISCONNECTED']
             
             # Reassign current task if any
             if self.current_task:
@@ -71,10 +72,12 @@ class CoordinatorProtocol(asyncio.Protocol):
                 CoordinatorProtocol.pending_tasks.insert(0, self.current_task)
                 self.current_task = None
             
-            CoordinatorProtocol.workers.pop(self.worker_id, None)
+            CoordinatorProtocol.workers.pop(self.wID, None)
 
-    def process_message(self, message):
-        """Route messages to appropriate handlers"""
+    
+    # handles all kinds of incoming and outgoing message routing for a coordinator
+    # think of it as router.Mux in Golang context
+    def processMsg(self, message):
         msg_type = message.get('type')
         
         if msg_type == 'register':
