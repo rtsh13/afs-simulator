@@ -6,56 +6,33 @@ import time
 import subprocess
 import sys
 
+WORKER_STATES = {'IDLE': 'idle','BUSY': 'busy','DISCONNECTED': 'disconnected'}
 
-WORKER_STATES = {
-    'IDLE': 'idle',
-    'BUSY': 'busy',
-    'DISCONNECTED': 'disconnected'
-}
-
-
-class Task(object):
-    """Task class: Represents a task that needs to be done"""
-
-    def __init__(self, task_id, filename, priority=0):
-        self.task_id = task_id
-        self.filename = filename
-        self.priority = priority
-        self.assigned_to = None
-        self.assigned_at = None
-        self.completed = False
-        self.created_at = time.time()
-
-
+# this is responsible for all comms with worker connections
 class CoordinatorProtocol(asyncio.Protocol):
-    """Coordinator class: Main class that implements the coordinator server"""
-        
-    # Class-level attributes shared across all worker connections
     workers = {}
     pending_tasks = []
     completed_tasks = []
     task_counter = 0
-    write_buffer = []
-    write_lock = asyncio.Lock()
+    buffer_writer = []
+    writer_lock = asyncio.Lock()
     output_file = "primes.txt"
-    input_dir = "input_files"
     available_files = []
     assigned_files = {}
     snapshot_counter = 0
     snapshot_dir = "snapshots"
     
-    # Snapshot state
     snapshot_in_progress = False
     snapshot_markers_sent = set()
     snapshot_states = {}
     current_snapshot_id = None
 
     def __init__(self): 
-        self.worker_id = None
-        self.worker_state = WORKER_STATES['DISCONNECTED']
+        self.wID = None
+        self.wState = WORKER_STATES['DISCONNECTED']
         self.transport = None
         self.current_task = None
-        self.tasks_completed = 0
+        self.completed_tasks = 0
         self.connected_at = None
         self.last_heartbeat = None
         self.buffer = b""
@@ -335,7 +312,7 @@ class CoordinatorProtocol(asyncio.Protocol):
                                if w.worker_state == WORKER_STATES['BUSY']),
             'pending_tasks': len(cls.pending_tasks),
             'completed_tasks': len(cls.completed_tasks),
-            'buffer_size': len(cls.write_buffer),
+            'buffer_size': len(cls.buffer_writer),
             'workers': worker_stats
         }
         return status
@@ -382,22 +359,19 @@ class CoordinatorProtocol(asyncio.Protocol):
         cls.save_snapshot(snapshot_id)
         cls.snapshot_in_progress = False
 
+    # Save snapshot to file
     @classmethod
-    def save_snapshot(cls, snapshot_id):
-        """Save snapshot to file"""
+    def save(cls, snapshot_id):
         if not os.path.exists(cls.snapshot_dir):
             os.makedirs(cls.snapshot_dir)
         
         snapshot_file = os.path.join(cls.snapshot_dir, f"{snapshot_id}.json")
+        with open(snapshot_file, 'w') as f: json.dump(cls.snapshot_states[snapshot_id], f, indent=2)
         
-        with open(snapshot_file, 'w') as f:
-            json.dump(cls.snapshot_states[snapshot_id], f, indent=2)
-        
-        print(f"Snapshot {snapshot_id} saved to {snapshot_file}")
+        print(f"snapshot {snapshot_id} saved to {snapshot_file}")
 
     @classmethod
     def restore_from_snapshot(cls, snapshot_id):
-        """Restore system state from snapshot"""
         snapshot_file = os.path.join(cls.snapshot_dir, f"{snapshot_id}.json")
         
         if not os.path.exists(snapshot_file):
@@ -418,7 +392,7 @@ class CoordinatorProtocol(asyncio.Protocol):
         cls.task_counter = coordinator_state['task_counter']
         
         print(f"Restored from snapshot {snapshot_id}")
-        print(f"  - Restored {len(cls.pending_tasks)} pending tasks")
+        print(f"Restored {len(cls.pending_tasks)} pending tasks")
         
         return True
 
