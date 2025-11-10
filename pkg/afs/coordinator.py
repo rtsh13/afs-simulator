@@ -422,15 +422,23 @@ class CoordinatorProtocol(asyncio.Protocol):
         
         return True
 
+# think of this as a unit of work that worker will invoke
+class Task(object):
+    def __init__(self, task_id, filename, priority=0):
+        self.task_id = task_id
+        self.filename = filename
+        self.priority = priority
+        self.assignedTo = None
+        self.assignedAt = None
+        self.completed = False
+        self.createdAt = time.time()
 
-async def start_coordinator(host='localhost', port=5000):
-    """Start the coordinator server"""
+# start the new coordinator function
+# indefinitely serve requests at port 5000
+# port 5000 is arbitiary. Can include in args if needed
+async def newCoordinator(host='localhost', port=5000):
     loop = asyncio.get_running_loop()
-    server = await loop.create_server(
-        lambda: CoordinatorProtocol(),
-        host, 
-        port
-    )
+    server = await loop.create_server(lambda: CoordinatorProtocol(),host, port)
     
     print(f"Coordinator started on {host}:{port}")
     
