@@ -111,10 +111,39 @@ func NewReplicaServer(id, inputDir, outputDir string, replicaAddrs []string) (*R
 		return nil, err
 	}
 
-	return fs, nil
+	// spawn a go routine to connect to replication servers
+	go r.connectToReplicas()
+
+	return r, nil
 }
 
-func (fs *FileServer) scanDirectory(dir string) error {
+func (r *ReplicaServer) connectToReplicas() {
+	for _, addr := range r.replicaAddr {
+		go func(address string) {
+			for {
+				// a simple tcp conenct
+				conn, err := net.Dial("tcp", address)
+				if err != nil {
+					time.Sleep(time.Second * 2)
+					continue
+				}
+
+				client := jsonrpc.NewClient(conn)
+
+				// each replication server gets a client created
+				// client is indexed by its address
+				r.replicationMutex.Lock()
+				r.replicaConnections[address] = client
+				r.replicationMutex.Unlock()
+
+				log.Printf("Connected to replica at %s", address)
+				return
+			}
+		}(addr)
+	}
+}
+
+func (r *ReplicaServer) scanDirectory(dir string) error {
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		return err
