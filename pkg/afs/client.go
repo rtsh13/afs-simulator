@@ -29,16 +29,16 @@ type CachedFile struct {
 	IsDirty   bool
 }
 
-func NewAFSClient(clientID, cacheDir, serverAddr string) (*AFSClient, error) {
+func NewAFSClient(clientID, cacheDir, serverAddr string) *AFSClient {
 	// Create cache directory
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return nil, fmt.Errorf("failed to create cache dir: %v", err)
+		return nil
 	}
 
 	// Connect to server
 	client, err := rpc.Dial("tcp", serverAddr)
 	if err != nil {
-		return nil, fmt.Errorf("failed to connect to server: %v", err)
+		return nil
 	}
 
 	afsClient := &AFSClient{
@@ -50,10 +50,10 @@ func NewAFSClient(clientID, cacheDir, serverAddr string) (*AFSClient, error) {
 	}
 
 	log.Printf("AFS Client %s connected to %s", clientID, serverAddr)
-	return afsClient, nil
+	return afsClient
 }
 
-func (c *AFSClient) Open(filename string, mode string) (*os.File, error) {
+func (c *AFSClient) Open(filename string) (*os.File, error) {
 	log.Printf("Client %s opening file: %s", c.clientID, filename)
 
 	// Check if file is in cache
