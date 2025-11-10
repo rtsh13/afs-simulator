@@ -457,7 +457,24 @@ func (fs *FileServer) TestAuth(req *utils.TestAuthRequest, resp *utils.TestAuthR
 	return nil
 }
 
-func (fs *FileServer) CreateFile(req *utils.CreateFileRequest, resp *utils.CreateFileResponse) error {
+// RPC to test the validity of a dirty file
+func (r *ReplicaServer) TestAuth(req *utils.TestAuthRequest, resp *utils.TestAuthResponse) error {
+	r.fileMutex.RLock()
+	fileInfo, exists := r.files[req.Filename]
+	r.fileMutex.RUnlock()
+
+	if !exists {
+		resp.Valid = false
+		return nil
+	}
+
+	resp.Valid = (fileInfo.Version == req.Version)
+	resp.Version = fileInfo.Version
+	return nil
+}
+
+// RPC to create a file
+func (r *ReplicaServer) CreateFile(req *utils.CreateFileRequest, resp *utils.CreateFileResponse) error {
 	log.Printf("Client %s creating file: %s", req.ClientID, req.Filename)
 
 	if !r.isPrimary {
@@ -468,7 +485,6 @@ func (fs *FileServer) CreateFile(req *utils.CreateFileRequest, resp *utils.Creat
 
 	targetPath := filepath.Join(r.outputDir, req.Filename)
 
-	// Create empty file
 	file, err := os.Create(targetPath)
 	if err != nil {
 		resp.Success = false
