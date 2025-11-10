@@ -527,3 +527,27 @@ func (r *ReplicaServer) Start(address string) error {
 		go jsonrpc.ServeConn(conn)
 	}
 }
+
+func (r *ReplicaServer) SaveSnapshot(filename string) error {
+	r.fileMutex.RLock()
+	r.replicationMutex.Lock()
+	defer r.fileMutex.RUnlock()
+	defer r.replicationMutex.Unlock()
+
+	snapshot := map[string]interface{}{
+		"id":           r.id,
+		"is_primary":   r.isPrimary,
+		"log_index":    r.logIndex,
+		"commit_index": r.commitIndex,
+		"files":        r.files,
+		"log":          r.replicationLog,
+		"timestamp":    time.Now(),
+	}
+
+	data, err := json.MarshalIndent(snapshot, "", "  ")
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filename, data, 0644)
+}
