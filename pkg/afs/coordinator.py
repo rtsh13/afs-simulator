@@ -133,20 +133,22 @@ class CoordinatorProtocol(asyncio.Protocol):
         id = message.get('task_id')
         error = message.get('error', 'Unknown error')
         
-        print(f"Task {task_id} failed on worker {self.worker_id}: {error}")
+        print(f"Task {id} failed on worker {self.wID}: {error}")
         
-        if self.current_task and self.current_task.task_id == task_id:
+        if self.current_task and self.current_task.task_id == id:
             self.current_task.assigned_to = None
             self.current_task.assigned_at = None
             CoordinatorProtocol.pending_tasks.insert(0, self.current_task)
             self.current_task = None
             
-        self.worker_state = WORKER_STATES['IDLE']
-        self.try_assign_task()
+        self.wState = WORKER_STATES['IDLE']
+        self.assignTask()
 
-    def handle_primes_result(self, message):
-        """Receive and buffer prime results"""
-        task_id = message.get('task_id')
+    # buffer the prime results received
+    # we have an coroutine that will take care of flushing
+    # fyi - this is how postgres works btw as well
+    def primesHandler(self, message):
+        id = message.get('task_id')
         filename = message.get('filename')
         primes = message.get('primes', [])
         worker_id = message.get('worker_id')
