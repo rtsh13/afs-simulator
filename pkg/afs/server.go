@@ -511,9 +511,12 @@ func (r *ReplicaServer) Start(address string) error {
 		return fmt.Errorf("failed to listen: %v", err)
 	}
 
-	log.Printf("File server listening on %s", address)
-	log.Printf("Input directory: %s", fs.inputDir)
-	log.Printf("Output directory: %s", fs.outputDir)
+	log.Printf("Replica server %s listening on %s", r.id, address)
+	log.Printf("Input directory: %s", r.inputDir)
+	log.Printf("Output directory: %s", r.outputDir)
+	log.Printf("Primary: %v", r.isPrimary)
+
+	go r.monitorHeartbeat()
 
 	for {
 		conn, err := listener.Accept()
