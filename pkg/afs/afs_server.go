@@ -220,7 +220,7 @@ func (s *AfsServer) GetFilesLen() int {
 	return len(s.files)
 }
 
-func (s *AfsServer) getFiles() []FileInfo {
+func (s *AfsServer) GetFiles() []FileInfo {
 	files := []FileInfo{}
 	for _, value := range s.files {
 		files = append(files, *value)

@@ -107,8 +107,9 @@ class CoordinatorProtocol(asyncio.Protocol):
 
     # acknowledge the heartbeat of the worker
     def heartbeatHandler(self, message):
-        self.last_heartbeat = time.time()
-        self.sendMsg({'type': 'heartbeat_ack', 'timestamp': time.time()})
+        now = time.time()
+        self.last_heartbeat = now
+        self.sendMsg({'type': 'heartbeat_ack', 'timestamp': now})
 
     # handle tasks being completed by the worker
     # throw them into IDLE state and see a new task

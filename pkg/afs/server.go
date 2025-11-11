@@ -367,7 +367,7 @@ func (r *ReplicaServer) SaveSnapshot(filename string) error {
 		"is_primary":   r.isPrimary,
 		"log_index":    r.logIndex,
 		"commit_index": r.commitIndex,
-		"files":        r.afsServer.getFiles(),
+		"files":        r.afsServer.GetFiles(),
 		"log":          r.replicationLog,
 		"timestamp":    time.Now(),
 	}
