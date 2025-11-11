@@ -5,6 +5,14 @@ class PrimeFinder:
         self.k = k
 
     def _power(self, a, n, p):
+        ''' Parameters: a - type: int
+                        n - type: int
+                        p - typeL int
+            
+            Return: type: int
+
+            Computes (a^n) % p 
+        '''
         result = 1
         a = a % p
         while n > 0:
@@ -13,37 +21,24 @@ class PrimeFinder:
             n = n >> 1
             a = (a * a) % p
         return result
-    
-    def _miller_rabin(self, n):
+
+    def _ferma_primality_test(self, n):
+        ''' Parameters: n - type: int
+            Return: type: bool
+
+            Ferma primality test
+        '''
         if n < 2:
             return False
-        if n == 2 or n == 3:
+        if n <= 3:
             return True
         if n % 2 == 0:
             return False
-        
-        # Write n-1 as 2^r * d
-        r, d = 0, n - 1
-        while d % 2 == 0:
-            r += 1
-            d //= 2
-        
-        # Witness loop
         for _ in range(self.k):
-            a = random.randint(2, n - 2)
-            x = self._power(a, d, n)
-            
-            if x == 1 or x == n - 1:
-                continue
-            
-            for _ in range(r - 1):
-                x = self._power(x, 2, n)
-                if x == n - 1:
-                    break
-            else:
+            a = random.randint(2, n-2)
+            if self._power(a, n-1, n) != 1:
                 return False
-        
         return True
     
     def is_prime(self, n):
-        return self._miller_rabin(n)
+        return self._ferma_primality_test(n)
