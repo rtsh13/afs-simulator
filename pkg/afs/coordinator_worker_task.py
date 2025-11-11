@@ -5,7 +5,5 @@ class Task(object):
         self.task_id = task_id
         self.filename = filename
         self.priority = priority
-        self.assignedTo = None
-        self.assignedAt = None
         self.completed = False
         self.createdAt = time.time()

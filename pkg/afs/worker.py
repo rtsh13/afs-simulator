@@ -16,10 +16,10 @@ class WorkerClient(object):
         self.reader = None # this is referring to StreamReader
         self.writer = None # this is referring to StreamWriter
         self.running = False
-        self.buffer = b"" # empty byte string
         self.tasks_processed = 0
         self.tasks_failed = 0
-        self.pf = PrimeFinder()  # Miller-Rabin iterations
+        self.pf = PrimeFinder()  # Ferma iterations
+        self.restart = False
         
         # requirement for caching files on disk
         # won't be stored in the cwd
@@ -29,18 +29,28 @@ class WorkerClient(object):
         # Snapshot state
         self.snapshotState = {}
 
+    async def run(self):
+        try:
+            await self.connect()
+            while self.running:
+                await asyncio.sleep(1)
+        except KeyboardInterrupt:
+            print(f"\n{self.workerID} shutting down.")
+        except Exception as e:
+            print(f"Error: {e}")
+            self.restart = True
+        finally:
+            await self.disconnect()
+            print(f"{self.workerID} stopped")
+        if self.restart:
+            self.restart = False
+            await self.run()
+
     # connect to the running coordinator
     async def connect(self, host='localhost', port=5000):
         try:
             self.reader, self.writer = await asyncio.open_connection(host, port)
             self.running = True
-            
-            print(f"\n{'='*50}")
-            print(f"Worker {self.workerID} started")
-            print(f"Coordinator: {host}:{port}")
-            print(f"AFS Servers: {', '.join(self.client.replica_addrs)}") 
-            print(f"Cache: {self.client.cache_dir}")
-            print(f"{'='*50}\n")
             
             # Start background tasks
             asyncio.create_task(self.handle_messages())
@@ -65,6 +75,7 @@ class WorkerClient(object):
                 if not data:
                     print("Connection closed by coordinator")
                     self.running = False
+                    self.restart= True
                     break
                 
                 self.buffer += data
@@ -87,19 +98,12 @@ class WorkerClient(object):
     # think of this as mux router if I wrote this in go
     async def msgRouter(self, message):
         msgType = message.get('type')
-        
-        if msgType == 'heartbeat_ack':
-            pass
-        elif msgType == 'request_id':
-            await self.requestIDHandler(message)
-        elif msgType == 'task_assignment':
-            await self.taskAssignmentHandler(message)
-        elif msgType == 'snapshot_marker':
-            await self.spanshotMarkerHandler(message)
-        elif msgType == 'status':
-            print(f"Status update: {message}")
-        elif msgType == 'registered':
-            print(f"registered with coordinator as {self.workerID}")
+
+        match msgType:
+            case 'request_id':
+                await self.requestIDHandler(message)
+            case 'task_assignment':
+                await self.taskAssignmentHandler(message)
 
     # respond to coordinator's request to send the worker id
     async def requestIDHandler(self, message):
@@ -109,42 +113,13 @@ class WorkerClient(object):
         task_id = message.get('task_id')
         filename = message.get('filename')
         
-        print(f"\n{'='*60}")
-        print(f"Task {task_id} assigned: {filename}")
-        print(f"{'='*60}")
-        
         # Process file asynchronously
         asyncio.create_task(self.process_file(task_id, filename))
 
-    # handle the broadcast marker request and respond back the state of the worker
-    async def spanshotMarkerHandler(self, message):
-        snapshot_id = message.get('snapshot_id')
-        
-        print(f"Snapshot marker received: {snapshot_id}")
-        
-        # Save local state
-        state = {
-            'worker_id': self.workerID,
-            'tasks_processed': self.tasks_processed,
-            'tasks_failed': self.tasks_failed,
-            'cache_files': list(self.client.cache.keys()),
-            'timestamp': time.time()
-        }
-        
-        # Send state to coordinator
-        await self.send_message({
-            'type': 'snapshot_state',
-            'snapshot_id': snapshot_id,
-            'worker_id': self.workerID,
-            'state': state
-        })
 
     async def process_file(self, task_id, filename):
         try:
-            start_time = time.time()
-            
             # Open file via AFS (with caching)
-            print(f"[Task {task_id}] Opening {filename} via AFS..")
             bytesResp = await self.client.open(filename)
             
             # Decode and parse
@@ -163,16 +138,12 @@ class WorkerClient(object):
                     except ValueError:
                         pass
             
-            print(f"[Task {task_id}] Processing {len(numbers)} numbers...")
-            
-            # Find primes using Miller-Rabin
+            # Find primes using Fermat
             primes = []
             for num in numbers:
                 if self.pf.is_prime(num):
                     primes.append(num)
-            
-            elapsed = time.time() - start_time
-            
+                        
             # Send results to coordinator
             await self.send_message({
                 'type': 'primes_result',
@@ -191,14 +162,10 @@ class WorkerClient(object):
                 'result': f'Found {len(primes)} primes'
             })
             
-            print(f"[Task {task_id}] Complete: {len(primes)}/{len(numbers)} primes found in {elapsed:.2f}s")
-            print(f"{'='*60}\n")
-            
             # Close file (flushes if modified)
             await self.client.close(filename)
             
         except Exception as e:
-            print(f"[Task {task_id}] Failed: {e}")
             self.tasks_failed += 1
             
             await self.send_message({
@@ -228,6 +195,9 @@ async def main():
     if len(sys.argv) > 1:
         workerID = sys.argv[1]
     else:
+        # TODO increase vairance,
+        # too much posibility for conflict with worker ID
+        # Posibly pull from env varialbe
         workerID = f"worker-{random.randint(1000, 9999)}"
 
     # pull the replica addresses
@@ -236,22 +206,12 @@ async def main():
     else:
         serversAddrs = ["localhost:8080"]
     
-    #pull the milner's number
+    # pull the ferma's number
     k = int(sys.argv[3]) if len(sys.argv) > 3 else 5 
 
     worker = WorkerClient(workerID, serversAddrs, k)
 
-    try:
-        await worker.connect()
-        while worker.running:
-            await asyncio.sleep(1)
-    except KeyboardInterrupt:
-        print(f"\n{workerID} shutting down.")
-    except Exception as e:
-        print(f"Error: {e}")
-    finally:
-        await worker.disconnect()
-        print(f"{workerID} stopped")
+    await worker.run()
 
 if __name__ == "__main__":
     asyncio.run(main())
