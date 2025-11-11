@@ -2,6 +2,18 @@ import subprocess
 import time
 import os
 import re
+import shlex
+import datetime
+
+def output_process_string(bash_args):
+    sanitized_args = [shlex.quote(arg) for arg in bash_args]
+    return " ".join(sanitized_args)
+
+def current_utc_timestamp():
+    return datetime.datetime.now(datetime.timezone.utc).isoformat()
+
+def log_timestamp():
+    current_utc_timestamp() + ": " + output_process_string([])
 
 def run_afs_server_subprocess(server_id, address, server_ids, addresses, working_directory, log_dir, primary=False, path_to_subprocess="cmd/server/main.go"):
     os.makedirs(log_dir, exist_ok=True)
@@ -19,7 +31,8 @@ def run_afs_server_subprocess(server_id, address, server_ids, addresses, working
         "-output", working_directory
     ]
 
-    with open(log_file_path, "w") as logfile:
+    with open(log_file_path, "a") as logfile:
+        logfile.write("Running " + output_process_string(bash_args)+"\n")
         process = subprocess.Popen(
             bash_args,
             stdout=logfile,
@@ -37,7 +50,7 @@ def run_coordinator_subprocess(log_dir, path_to_subprocess="pkg/afs/coordinator.
     ]
     log_file_path = os.path.join(log_dir, "coordinator" + ".log")
 
-    with open(log_file_path, "w") as logfile
+    with open(log_file_path, "w") as logfile:
         process = subprocess.Popen(
             bash_args,
             stdout=logfile,
@@ -46,15 +59,15 @@ def run_coordinator_subprocess(log_dir, path_to_subprocess="pkg/afs/coordinator.
 
     return process
 
-def run_worker_subprocess(replica_id, server_addresses, log_dir, milners_number=5, path_to_subprocess="pkg/afs/worker.py"):
+def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5, path_to_subprocess="pkg/afs/worker.py"):
     bash_args = [
         "python3",
         "-u", path_to_subprocess,
-        str(replica_id),
+        str(worker_id),
         ",".join(server_addresses),
-        str(milners_number)
+        str(fermats_number)
     ]
-    log_file_path = os.path.join(log_dir, "worker" + str(replica_id) +  ".log")
+    log_file_path = os.path.join(log_dir, "worker" + str(worker_id) +  ".log")
     with open(log_file_path, "w") as logfile:
         process = subprocess.Popen(
             bash_args,
@@ -103,8 +116,8 @@ def check_log(log_dir, log_name, search_term, error_callback=None):
         return search_results
 
 
-def run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, milners_number=5, primary_server=0):
-    addresses = build_local_address_strings(num_replicas, inital_address)
+def run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=5, primary_server=0):
+    addresses = build_local_address_strings(num_replicas, initial_address)
 
     subprocesses = {
         "afs": [],
@@ -118,10 +131,10 @@ def run_system(num_replicas, num_workers, initial_address, afs_directory, log_di
                 i, 
                 address, 
                 range(num_replicas), 
-                ",".join(addresses), 
+                addresses, 
                 afs_directory, 
                 log_dir, 
-                primary=("true" if i == primary_server else "false")
+                "true" if i == primary_server else "false"
             )
         )
 
@@ -131,7 +144,7 @@ def run_system(num_replicas, num_workers, initial_address, afs_directory, log_di
 
     for i in range(num_workers):
         subprocesses["worker"].append(
-            run_worker_subprocess(i, addresses, log_dir, milners_number=milners_number)
+            run_worker_subprocess(i, addresses, log_dir, fermats_number=fermats_number)
         )
     return subprocesses
     
@@ -147,8 +160,8 @@ def quit_system(system_process_obj):
 
 
 #Basic worker snapshot test
-def worker_snapshots_test(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, milners_number=5):
-    processes = run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, milners_number=milners_number)
+def worker_snapshots_test(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=5):
+    processes = run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=fermats_number)
 
     print("Waiting for 45 seconds to populate snapshots")
     time.sleep(45)
@@ -164,8 +177,8 @@ def worker_snapshots_test(num_replicas, num_workers, initial_address, afs_direct
 
 
 #Basic worker failure test
-def worker_failure_test(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, milners_number=5):
-    processes = run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, milners_number=5)
+def worker_failure_test(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=5):
+    processes = run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=5)
     addresses = build_local_address_strings(num_replicas, initial_address)
 
     print("Wait for 15 seconds for Worker 0 to begin processing")
@@ -176,7 +189,7 @@ def worker_failure_test(num_replicas, num_workers, initial_address, afs_director
     print("3 second wait, then restarting Worker 0")
     time.sleep(3)
     
-    processes["worker"][0] = run_worker_subprocess(0, addresses, log_dir, milners_number=milners_number)
+    processes["worker"][0] = run_worker_subprocess(0, addresses, log_dir, fermats_number=fermats_number)
     
     print("attempted Worker 0 restart, waiting for 10 seconds then returning results")
     time.sleep(10)
@@ -206,8 +219,8 @@ def worker_failure_test(num_replicas, num_workers, initial_address, afs_director
     
 
 #Basic afs primary failure test
-def afs_primary_failure_test(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, milners_number=5):
-    processes = run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, milners_number=milners_number)
+def afs_primary_failure_test(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=5):
+    processes = run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=fermats_number)
 
 
     print("Running for 15 seconds before killing primary server")

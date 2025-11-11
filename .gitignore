@@ -7,6 +7,7 @@
 *.dll
 *.so
 *.dylib
+*.log
 
 # Test binary, built with `go test -c`
 *.test
@@ -33,6 +34,7 @@ go.work.sum
 __pycache__
 
 snapshots/*
+logs/*
 primes.txt
 
 !snapshots/successful_snapshot.json
