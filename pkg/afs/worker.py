@@ -18,6 +18,7 @@ class WorkerClient(object):
         self.running = False
         self.tasks_processed = 0
         self.tasks_failed = 0
+        self.buffer = b"" # empty byte string
         self.pf = PrimeFinder()  # Ferma iterations
         self.restart = False
         

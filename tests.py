@@ -45,7 +45,8 @@ def run_afs_server_subprocess(server_id, address, server_ids, addresses, working
 
 def run_coordinator_subprocess(log_dir, path_to_subprocess="pkg/afs/coordinator.py"):
     bash_args = [
-        "python3",
+        "py",
+        "-3",
         "-u", path_to_subprocess,
     ]
     log_file_path = os.path.join(log_dir, "coordinator" + ".log")
@@ -61,7 +62,8 @@ def run_coordinator_subprocess(log_dir, path_to_subprocess="pkg/afs/coordinator.
 
 def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5, path_to_subprocess="pkg/afs/worker.py"):
     bash_args = [
-        "python3",
+        "py",
+        "-3",
         "-u", path_to_subprocess,
         str(worker_id),
         ",".join(server_addresses),
