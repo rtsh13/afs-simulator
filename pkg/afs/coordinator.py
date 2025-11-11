@@ -350,7 +350,7 @@ class CoordinatorProtocol(asyncio.Protocol):
         
         if os.path.exists(os.path.join(cls.snapshot_dir, "snapshot_current.json")):
             if os.path.exists(os.path.join(cls.snapshot_dir, "snapshot_previous.json")):
-                os.remove(os.paht.join(cls.snapshot_dir, "snapshot_previous.json"))
+                os.remove(os.path.join(cls.snapshot_dir, "snapshot_previous.json"))
             os.rename(os.path.join(cls.snapshot_dir, "snapshot_current.json"), os.path.join(cls.snapshot_dir, "snapshot_previous.json"))
 
         snapshot_file = os.path.join(cls.snapshot_dir, "snapshot_current.json")
