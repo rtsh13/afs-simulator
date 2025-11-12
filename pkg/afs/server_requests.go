@@ -14,12 +14,12 @@ type ReplicationResponse struct {
 }
 
 type HeartbeatRequest struct {
-	LeaderID    string
+	LeaderID    int
 	CommitIndex int64
 	Timestamp   time.Time
 }
 
 type HeartbeatResponse struct {
 	Success   bool
-	ReplicaID string
+	ReplicaID int
 }

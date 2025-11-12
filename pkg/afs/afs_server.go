@@ -18,13 +18,10 @@ type AfsServer struct {
 }
 
 func NewAfsServer(workingDir string) (*AfsServer, error) {
-	if _, err := os.Stat(workingDir); os.IsNotExist(err) {
-		return nil, fmt.Errorf("input directory does not exist: %s", workingDir)
-	}
 
 	if _, err := os.Stat(workingDir); os.IsNotExist(err) {
 		if err := os.MkdirAll(workingDir, 0755); err != nil {
-			return nil, fmt.Errorf("failed to create output directory: %v", err)
+			return nil, fmt.Errorf("failed to create working directory: %v", err)
 		}
 	}
 	s := &AfsServer{
@@ -42,9 +39,7 @@ func (s *AfsServer) scanDirectory(dir string) error {
 	if err != nil {
 		return err
 	}
-
 	s.fileMutex.Lock()
-	defer s.fileMutex.Unlock()
 
 	for _, entry := range entries {
 		if !entry.IsDir() {
@@ -54,7 +49,9 @@ func (s *AfsServer) scanDirectory(dir string) error {
 				continue
 			}
 
+			log.Printf("%s", entry.Name())
 			fullPath := filepath.Join(dir, entry.Name())
+			log.Printf("%s", fullPath)
 			s.files[entry.Name()] = &FileInfo{
 				Path:         fullPath,
 				Version:      1,
@@ -63,6 +60,7 @@ func (s *AfsServer) scanDirectory(dir string) error {
 			}
 		}
 	}
+	s.fileMutex.Unlock()
 
 	return nil
 }
@@ -89,11 +87,13 @@ func (s *AfsServer) Open(req *utils.OpenRequest, resp *utils.OpenResponse) error
 }
 
 func (s *AfsServer) FetchFile(req *utils.FetchFileRequest, resp *utils.FetchFileResponse) error {
-
 	s.fileMutex.RLock()
 	fileInfo, exists := s.files[req.Filename]
 	s.fileMutex.RUnlock()
-
+	for key, val := range s.files {
+		log.Printf("%s", key)
+		log.Printf("%s", val.Path)
+	}
 	if !exists {
 		resp.Success = false
 		resp.Error = "file not found"

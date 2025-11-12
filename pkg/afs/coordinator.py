@@ -119,7 +119,7 @@ class CoordinatorProtocol(asyncio.Protocol):
             CoordinatorProtocol.completed_tasks.append(self.current_task)
             index = -1
             for i in range(len(CoordinatorProtocol.pending_tasks)):
-                if self.current_task.taskId == CoordinatorProtocol.pending_tasks.taskId:
+                if self.current_task.task_id == CoordinatorProtocol.pending_tasks[i].task_id:
                     index = i
                     break
             if index != -1:
@@ -262,6 +262,7 @@ class CoordinatorProtocol(asyncio.Protocol):
                         results_to_write = cls.buffer_writer[:]
                         # Read in existing primes from file
                         bytesInFile = await cls.afsclient.open(cls.output_file)
+                        print("OWO")
                         content = bytesInFile.decode('utf-8')
                         content.strip()
 
@@ -429,7 +430,7 @@ async def main():
     else:
         serversAddrs = ["localhost:8080"]
     
-    cacheDir = "/tmp/afs-{clientId}"
+    cacheDir = f"/tmp/afs-{clientId}"
 
     CoordinatorProtocol.makeAfsClient(clientId, cacheDir, serversAddrs)
     if not CoordinatorProtocol.restore_from_snapshot():

@@ -27,8 +27,7 @@ def run_afs_server_subprocess(server_id, address, server_ids, addresses, working
         "-addr", address,
         "-replicas", ",".join(addresses),
         "-primary", "true" if primary else "false",
-        "-input", working_directory,
-        "-output", working_directory
+        "-working", working_directory,
     ]
 
     with open(log_file_path, "a") as logfile:

@@ -1,14 +1,12 @@
 package afs
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
 	"math/rand"
 	"net"
 	"net/rpc"
 	"net/rpc/jsonrpc"
-	"os"
 	"sync"
 	"time"
 
@@ -20,7 +18,7 @@ const (
 )
 
 type ReplicaServer struct {
-	id          string
+	id          int
 	isPrimary   bool
 	replicaAddr []string
 	afsServer   *AfsServer
@@ -36,7 +34,7 @@ type ReplicaServer struct {
 }
 
 // creates a new server that supports replication
-func NewReplicaServer(id, workingDir string, replicaAddrs []string) (*ReplicaServer, error) {
+func NewReplicaServer(id int, workingDir string, replicaAddrs []string) (*ReplicaServer, error) {
 
 	// adding random delay to avoid leader election clash
 	randDelay := time.Duration(rand.Intn(2000)) * time.Millisecond
@@ -95,18 +93,18 @@ func (r *ReplicaServer) connectToReplicas() {
 // once all servers are up based on user flag, the server becomes PRIMARY
 func (r *ReplicaServer) BecomePrimary() {
 	r.isPrimary = true
-	log.Printf("Server %s became PRIMARY", r.id)
+	log.Printf("Server %d became PRIMARY", r.id)
 	go r.sendHeartbeats()
 }
 
 // upon PRIMARY failing, the replica is elected as PRIMARY
 // throws heartbeat to rest replicas to assert dominance
 func (r *ReplicaServer) electPrimary() {
-	log.Printf("Server %s starting election process...", r.id)
+	log.Printf("Server %d starting election process...", r.id)
 
 	r.isPrimary = true
 	r.lastHeartbeat = time.Now()
-	log.Printf("Server %s became PRIMARY (via automated election)", r.id)
+	log.Printf("Server %d became PRIMARY (via automated election)", r.id)
 
 	go r.sendHeartbeats()
 }
@@ -124,7 +122,7 @@ func (r *ReplicaServer) monitorHeartbeat() {
 		}
 
 		if time.Since(r.lastHeartbeat) > r.electionTimeout {
-			log.Printf("Server %s detected leader failure (no heartbeat for %v)", r.id, r.electionTimeout)
+			log.Printf("Server %d detected leader failure (no heartbeat for %v)", r.id, r.electionTimeout)
 			r.electPrimary()
 			return
 		}
@@ -160,6 +158,7 @@ func (r *ReplicaServer) sendHeartbeats() {
 				req := &HeartbeatRequest{
 					// commit index always tells the current state of the replica
 					// think of it always catching up with the log index
+					LeaderID:    r.id,
 					CommitIndex: r.commitIndex,
 					Timestamp:   time.Now(),
 				}
@@ -178,16 +177,19 @@ func (r *ReplicaServer) sendHeartbeats() {
 
 // this is a RPC for heartbeat to be only invoked via RPC call from PRIMARY
 func (r *ReplicaServer) Heartbeat(req *HeartbeatRequest, resp *HeartbeatResponse) error {
-	if r.isPrimary {
-		log.Printf("Server %s stepping down after receiving heartbeat from Leader %s", r.id, req.LeaderID)
+	if r.id < req.LeaderID {
+		if r.isPrimary {
+			log.Printf("Server %d stepping down after receiving heartbeat from Leader %d", r.id, req.LeaderID)
+		}
+
+		r.isPrimary = false
+		r.lastHeartbeat = time.Now()
+		r.commitIndex = req.CommitIndex
+
+		resp.Success = true
+		resp.ReplicaID = r.id
+		return nil
 	}
-
-	r.isPrimary = false
-	r.lastHeartbeat = time.Now()
-	r.commitIndex = req.CommitIndex
-
-	resp.Success = true
-	resp.ReplicaID = r.id
 	return nil
 }
 
@@ -354,28 +356,4 @@ func (r *ReplicaServer) Start(address string) error {
 		}
 		go jsonrpc.ServeConn(conn)
 	}
-}
-
-func (r *ReplicaServer) SaveSnapshot(filename string) error {
-	r.afsServer.RLockFileMutex()
-	r.replicationMutex.Lock()
-	defer r.afsServer.RUnlockFileMutex()
-	defer r.replicationMutex.Unlock()
-
-	snapshot := map[string]interface{}{
-		"id":           r.id,
-		"is_primary":   r.isPrimary,
-		"log_index":    r.logIndex,
-		"commit_index": r.commitIndex,
-		"files":        r.afsServer.GetFiles(),
-		"log":          r.replicationLog,
-		"timestamp":    time.Now(),
-	}
-
-	data, err := json.MarshalIndent(snapshot, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(filename, data, 0644)
 }
