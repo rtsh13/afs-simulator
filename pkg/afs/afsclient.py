@@ -229,9 +229,8 @@ async def main():
     
     test_file_path = "test_cli"+clientID + ".txt"
 
-    fileBytes = await client.open(test_file_path)
-    client.write(test_file_path, fileBytes)
-    client.close(test_file_path)
+    await client.write(test_file_path, b'testing testing 123')
+    await client.close(test_file_path)
 
 
 if __name__ == "__main__":

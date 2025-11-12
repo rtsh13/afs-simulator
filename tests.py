@@ -70,7 +70,7 @@ def run_afs_server_subprocess(server_id, address, server_ids, addresses, working
     
 
 def run_coordinator_subprocess(log_dir, server_addresses, id="coordinator", path_to_subprocess="pkg/afs/coordinator.py"):
-    bash_args = ["py", "-3"]
+    bash_args = initial_python_args()
     bash_args.extend([
         "-u", path_to_subprocess,
         id,
@@ -91,7 +91,7 @@ def run_coordinator_subprocess(log_dir, server_addresses, id="coordinator", path
     return all_pids
 
 def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5, path_to_subprocess="pkg/afs/worker.py"):
-    bash_args = ["py", "-3"]
+    bash_args = initial_python_args()
     bash_args.extend([
         "-u", path_to_subprocess,
         str(worker_id),
@@ -111,7 +111,7 @@ def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5
     return all_pids
 
 def run_client_subprocess(client_id, server_addresses, log_dir, max_retries=3, retry_delay=1, path_to_subprocess="pkg/afs/afsclient.py"):
-    bash_args = ["py", "-3"]
+    bash_args = initial_python_args()
     bash_args.extend([
         "-u", path_to_subprocess,
         str(client_id),
