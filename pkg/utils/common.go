@@ -2,7 +2,6 @@ package utils
 
 import "time"
 
-// File metadata
 type FileMetadata struct {
 	Filename     string
 	Size         int64
@@ -10,11 +9,10 @@ type FileMetadata struct {
 	LastModified time.Time
 }
 
-// RPC Request/Response structures
 type OpenRequest struct {
 	ClientID string
 	Filename string
-	Mode     string // "r", "w", "rw"
+	Mode     string 
 }
 
 type OpenResponse struct {
