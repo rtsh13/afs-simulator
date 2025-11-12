@@ -55,7 +55,7 @@ class AFSClient:
 
                     print(data)
                     response = json.loads(data.decode('utf-8'))
-                    print("response loaded diaper")
+                    print("response loaded")
                     
                     if response.get("error"):
                         raise Exception(f"RPC Error: {response['error'].get('message', 'Unknown')}")
@@ -95,7 +95,7 @@ class AFSClient:
         return os.path.join(self.cache_dir, filename)
 
     async def open(self, filename):
-        print("open me dadday")
+        print("opening")
         cache_path = self._get_cache_path(filename)
         # Check if file is in cache
         if filename in self.cache:
@@ -122,7 +122,7 @@ class AFSClient:
         return content
 
     async def _fetch_from_server(self, filename):
-        print("8=======D")
+        print("fetching from server")
         result = await self._rpc_call("ReplicaServer.FetchFile", 
                 {"ClientID": self.client_id,"Filename": filename})
         print("(.)(.)")
