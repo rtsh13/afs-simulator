@@ -5,6 +5,7 @@ import re
 import shlex
 import datetime
 import psutil
+import shutil
 
 OPERATING_SYSTEM = "linux"
 
@@ -32,8 +33,14 @@ def get_process_pids(process):
         pids.append(child.pid)
     return pids
 
-def run_afs_server_subprocess(server_id, address, server_ids, addresses, working_directory, log_dir, primary=False, path_to_subprocess="cmd/server/main.go"):
+def run_afs_server_subprocess(server_id, address, server_ids, addresses, working_directory, log_dir, primary=False, prepopulated_files = ["input_dataset_001.txt", "input_dataset_002.txt", "input_dataset_003.txt"], path_to_subprocess="cmd/server/main.go"):
     os.makedirs(log_dir, exist_ok=True)
+    replica_path = os.path.join(working_directory, str(server_id))
+    os.makedirs(replica_path, exist_ok=True)
+    #Copy prepopulated files from main data to replica directory
+    for file in prepopulated_files:
+        shutil.copy(os.path.join(working_directory, file), os.path.join(replica_path, destination_file))
+
     log_file_path = os.path.join(log_dir, "server" + str(server_id) + ".log")
 
     bash_args = [
@@ -44,7 +51,7 @@ def run_afs_server_subprocess(server_id, address, server_ids, addresses, working
         "-addr", address,
         "-replicas", ",".join(addresses),
         "-primary", "true" if primary else "false",
-        "-working", working_directory,
+        "-working", replica_path
     ]
 
     all_process_ids = None
@@ -324,15 +331,20 @@ def afs_replication_test(num_replicas, cache_dir, initial_address, afs_directory
     print("Sleeping for 3 seconds")
     time.sleep(3)
 
-    test_output_file = "test_cli"+str(0)
-    files = len(list(filter(lambda x: x.find(test_output_file) != -1, os.listdir("data"))))
+    test_output_file = "test_cli"+str(0) + ".txt"
 
-    print("Found " + str(files) + " files matching the test case")
-    if files == 0:
+    #Search replica directories
+    replica_dirs = [os.path.join(afs_directory, str(i)) for i in num_replicas]
+    matches = 0
+    for replica_dir in replica_dirs:
+        matches = matches + len(list(filter(lambda x: x == test_output_file, os.listdir(replica))))
+    
+    print("Found " + str(matches) + " files matching the test case")
+    if matches == 0:
         print("Write failed")
-    if files == 1:
+    if matches == 1:
         print("Write success, no duplicates")
-    if files > 1:
+    if matches > 1:
         print("Write success, duplicates found")
 
 
