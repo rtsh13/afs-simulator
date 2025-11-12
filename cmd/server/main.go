@@ -13,7 +13,7 @@ func main() {
 	address := flag.String("addr", ":8080", "Server address")
 
 	id := flag.Int("id", 0, "Unique Server ID")
-	replicas := flag.String("replicas", "", "Comma-separated list of OTHER replica addresses (exclude self)")
+	replicas := flag.String("replicas", "", "Comma-separated list of ALL replica addresses (including self)")
 	isPrimaryFlag := flag.Bool("primary", false, "Start this server as the initial primary")
 
 	flag.Parse()
@@ -24,7 +24,7 @@ func main() {
 		parts := strings.Split(*replicas, ",")
 		for _, addr := range parts {
 			trimmed := strings.TrimSpace(addr)
-			if trimmed != "" {
+			if trimmed != "" && trimmed != strings.TrimSpace(*address) {
 				replicaAddrs = append(replicaAddrs, trimmed)
 			}
 		}

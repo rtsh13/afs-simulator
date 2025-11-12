@@ -4,6 +4,7 @@ import os
 import re
 import shlex
 import datetime
+import psutil
 
 OPERATING_SYSTEM = "linux"
 
@@ -23,6 +24,14 @@ def initial_python_args():
     if OPERATING_SYSTEM == "windows":
         return ["py", "-3"]
 
+
+def get_process_pids(process):
+    pid = process.pid
+    pids = [pid]
+    for child in psutil.Process(pid).children(recursive=True):
+        pids.append(child.pid)
+    return pids
+
 def run_afs_server_subprocess(server_id, address, server_ids, addresses, working_directory, log_dir, primary=False, path_to_subprocess="cmd/server/main.go"):
     os.makedirs(log_dir, exist_ok=True)
     log_file_path = os.path.join(log_dir, "server" + str(server_id) + ".log")
@@ -38,6 +47,7 @@ def run_afs_server_subprocess(server_id, address, server_ids, addresses, working
         "-working", working_directory,
     ]
 
+    all_process_ids = None
     with open(log_file_path, "a") as logfile:
         logfile.write("Running " + output_process_string(bash_args)+"\n")
         process = subprocess.Popen(
@@ -46,9 +56,11 @@ def run_afs_server_subprocess(server_id, address, server_ids, addresses, working
             stderr=logfile,
             shell=False
         )
+        all_process_ids = get_process_pids(process)
 
-    return process
+    return all_process_ids
 
+    
 
 def run_coordinator_subprocess(log_dir, path_to_subprocess="pkg/afs/coordinator.py"):
     bash_args = initial_python_args()
@@ -57,14 +69,17 @@ def run_coordinator_subprocess(log_dir, path_to_subprocess="pkg/afs/coordinator.
     ])
     log_file_path = os.path.join(log_dir, "coordinator" + ".log")
 
+    all_pids = None
+
     with open(log_file_path, "w") as logfile:
         process = subprocess.Popen(
             bash_args,
             stdout=logfile,
             stderr=logfile
         )
-
-    return process
+        all_pids = get_process_pids(process)
+    
+    return all_pids
 
 def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5, path_to_subprocess="pkg/afs/worker.py"):
     bash_args = initial_python_args()
@@ -75,14 +90,16 @@ def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5
         str(fermats_number)
     ])
     log_file_path = os.path.join(log_dir, "worker" + str(worker_id) +  ".log")
+    all_pids = None
     with open(log_file_path, "w") as logfile:
         process = subprocess.Popen(
             bash_args,
             stdout=logfile,
             stderr=logfile
         )
+        all_pids = get_process_pids(process)
 
-    return process
+    return all_pids
 
 def run_client_subprocess(client_id, server_addresses, log_dir, max_retries=3, retry_delay=1, path_to_subprocess="pkg/afs/afsclient.py"):
     bash_args = initial_python_args()
@@ -94,13 +111,17 @@ def run_client_subprocess(client_id, server_addresses, log_dir, max_retries=3, r
         str(retry_delay)
     ])
     log_file_path = os.path.join(log_dir, "afsclient" + str(client_id) +  ".log")
+
+    all_pids = None
     with open(log_file_path, "w") as logfile:
         process = subprocess.Popen(
             bash_args,
             stdout=logfile,
             stderr=logfile
         )
-    return process
+        all_pids = get_process_pids(process)
+    
+    return all_pids
 
 
 
@@ -196,11 +217,13 @@ def run_system(num_replicas, num_workers, initial_address, afs_directory, log_di
 def quit_system(system_process_obj):
     for key in system_process_obj.keys():
         value = system_process_obj[key]
-        if type(value) == list:
+        if len(value) > 0 and type(value[0]) == list:
+            for proc_list in value:
+                for proc in proc_list:
+                    psutil.Process(proc).kill()
+        elif len(value) > 0 and type(value[0]) == int:
             for proc in value:
-                proc.kill()
-        else:
-            proc.kill()
+                psutil.Process(proc).kill()
 
 
 
@@ -325,7 +348,9 @@ def all_tests():
     test_num = test_num + 1
     print("Running test 3, AFS primary failure")
     afs_primary_failure_test(3, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
+    print("Running test 4, AFS replication test")
+    afs_replication_test(2, "tmp/", "localhost:8080", "data", "logs/test")
+
 
 if __name__ == "__main__":
-    afs_replication_test(3, "tmp/", "localhost:8080", "data", "logs/test")
-    #all_tests()
+    all_tests()
