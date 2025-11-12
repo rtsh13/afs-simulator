@@ -321,16 +321,18 @@ def afs_replication_test(num_replicas, cache_dir, initial_address, afs_directory
     system["afs"] = run_afs_system(num_replicas, initial_address, afs_directory, log_dir, primary_server=0)
     system["client"] = run_client_subprocess(0, replicas_str, log_dir, max_retries=max_retries, retry_delay=retry_delay)
 
+    print("Sleeping for 3 seconds")
+    time.sleep(3)
 
     test_output_file = "test_cli"+str(0)
     files = len(list(filter(lambda x: x.find(test_output_file) != -1, os.listdir("data"))))
 
-    print("Found " + str(len(files)) + " files matching the test case")
-    if len(files) == 0:
+    print("Found " + str(files) + " files matching the test case")
+    if files == 0:
         print("Write failed")
-    if len(files) == 1:
+    if files == 1:
         print("Write success, no duplicates")
-    if len(files) > 1:
+    if files > 1:
         print("Write success, duplicates found")
 
 
@@ -397,4 +399,5 @@ def all_tests():
 
 
 if __name__ == "__main__":
-    all_tests()
+    #all_tests()
+    afs_replication_test(2, "tmp/", "localhost:8080", "data", "logs/test")
