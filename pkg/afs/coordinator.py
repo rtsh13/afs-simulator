@@ -81,6 +81,8 @@ class CoordinatorProtocol(asyncio.Protocol):
         match msg_type:
             case 'register':
                 self.registerHandler(message)
+            case 'recover':
+                self.recoverWorker(message)
             case 'heartbeat':
                 self.heartbeatHandler(message)
             case 'task_complete':
@@ -92,6 +94,25 @@ class CoordinatorProtocol(asyncio.Protocol):
             case 'status_request':
                 self.statusHandler()
 
+    def recoverWorker(self, message):
+        self.wID = message.get('worker_id')
+        task_id = message.get('task_id')
+        if self.wID in CoordinatorProtocol.workers:
+            CoordinatorProtocol.workers[self.wID].terminate()
+            CoordinatorProtocol.workers[self.wID] = None
+        CoordinatorProtocol[self.wID] = self
+        task_found = False
+        for task in CoordinatorProtocol.pending_tasks:
+            if task_id == task.task_id:
+                task_found = True
+                break
+        if task_found:
+            self.wState = WORKER_STATES['BUSY']
+            self.sendMsg({'type': 'finish_recovery'})
+        else:
+            self.assignTask()
+        
+        
     # spawn a new worker and keep it IDLE
     def registerHandler(self, message):
         self.wID = message.get('worker_id')
@@ -342,8 +363,10 @@ class CoordinatorProtocol(asyncio.Protocol):
         }
         
         cls.snapshot_state = {'coordinator': coordinator_state,'timestamp': time.time()}
-        
-        
+
+        print("sending message")
+        for _, worker in cls.workers:
+            worker.sendMsg({'type': 'initiate_snapshot'})
         cls.save()
         cls.snapshot_in_progress = False
 

@@ -3,6 +3,7 @@ import json
 import sys
 import random
 import time
+import os
 import afsclient
 from prime_finder import PrimeFinder
 
@@ -21,14 +22,19 @@ class WorkerClient(object):
         self.buffer = b"" # empty byte string
         self.pf = PrimeFinder()  # Ferma iterations
         self.restart = False
+        self.snapshotDir = f"snapshot-{str(workerID)}"
+        self.snapshotState = {}
+        self.snapshotInProgress = False
+        self.primes = []
+        self.processed = set()
+        self.task_id = -1
+        self.filename = ""
         
         # requirement for caching files on disk
         # won't be stored in the cwd
         cacheDir = f"/tmp/afs-{workerID}"
         self.client = afsclient.AFSClient(workerID, cacheDir, serverAddrs)
         
-        # Snapshot state
-        self.snapshotState = {}
 
     async def run(self):
         try:
@@ -105,29 +111,61 @@ class WorkerClient(object):
                 await self.requestIDHandler(message)
             case 'task_assignment':
                 await self.taskAssignmentHandler(message)
+            case 'finish_recovery':
+                await self.finish_recovery()
+            case 'initiate_snapshot':
+                await self.initiate_snapshot()
+    
+    async def initiate_snapshot(self):
+        print(f'{self.workerID} snapshot start')
+        self.snapshotInProgress = True
+        self.snapshotState = {
+            "workerID": self.workerID,
+            "primes": [prime for prime in self.primes],
+            "processed": [num for num in list(self.processed)],
+            "task_id": self.task_id,
+            "filename": self.filename
+        }
+
+        self.save_snapshot()
+        self.snapshotInProgress = False
+
+    async def save_snapshot(self):
+        if not os.path.exists(self.snapshotDir):
+            os.makedirs(self.snapshotDir)
+        
+        if os.path.exists(os.path.join(self.snapshotDir, "snapshot_current.json")):
+            if os.path.exists(os.path.join(self.snapshotDir, "snapshot_previous.json")):
+                os.remove(os.path.join(self.snapshotDir, "snapshot_previous.json"))
+            os.rename(os.path.join(self.snapshotDir, "snapshot_current.json"), os.path.join(self.snapshotDir, "snapshot_previous.json"))
+
+        snapshot_file = os.path.join(self.snapshotDir, "snapshot_current.json")
+        with open(snapshot_file, 'w') as f: json.dump(self.snapshotState, f, indent=2)
 
     # respond to coordinator's request to send the worker id
     async def requestIDHandler(self, message):
         await self.send_message({'type': 'register','worker_id': self.workerID})
 
     async def taskAssignmentHandler(self, message):
-        task_id = message.get('task_id')
-        filename = message.get('filename')
+        self.task_id = message.get('task_id')
+        self.filename = message.get('filename')
+        self.primes = []
+        self.processed = set()
         
         # Process file asynchronously
-        asyncio.create_task(self.process_file(task_id, filename))
+        asyncio.create_task(self.process_file())
 
 
-    async def process_file(self, task_id, filename):
+    async def process_file(self):
         try:
             # Open file via AFS (with caching)
-            bytesResp = await self.client.open(filename)
+            bytesResp = await self.client.open(self.filename)
             
             # Decode and parse
             content = bytesResp.decode('utf-8')
             
             if not content.strip():
-                raise Exception(f"File is empty: {filename}")
+                raise Exception(f"File is empty: {self.filename}")
         
             numbers = []
             for line in content.split('\n'):
@@ -140,17 +178,18 @@ class WorkerClient(object):
                         pass
             
             # Find primes using Fermat
-            primes = []
             for num in numbers:
-                if self.pf.is_prime(num):
-                    primes.append(num)
+                if num not in self.processed:
+                    if self.pf.is_prime(num):
+                        self.primes.append(num)
+                    self.processed.add(num)
                         
             # Send results to coordinator
             await self.send_message({
                 'type': 'primes_result',
-                'task_id': task_id,
-                'filename': filename,
-                'primes': primes,
+                'task_id': self.task_id,
+                'filename': self.filename,
+                'primes': self.primes,
                 'worker_id': self.workerID
             })
             
@@ -159,19 +198,23 @@ class WorkerClient(object):
             # Mark task complete
             await self.send_message({
                 'type': 'task_complete',
-                'task_id': task_id,
-                'result': f'Found {len(primes)} primes'
+                'task_id': self.task_id,
+                'result': f'Found {len(self.primes)} primes'
             })
             
             # Close file (flushes if modified)
-            await self.client.close(filename)
+            await self.client.close(self.filename)
+            self.filename = ""
+            self.task_id = -1
+            self.primes = []
+            self.processed = set()
             
         except Exception as e:
             self.tasks_failed += 1
             
             await self.send_message({
                 'type': 'task_failed',
-                'task_id': task_id,
+                'task_id': self.task_id,
                 'error': str(e)
             })
 
@@ -190,6 +233,40 @@ class WorkerClient(object):
             await asyncio.sleep(5)
             if self.running:
                 await self.send_message({'type': 'heartbeat','worker_id': self.workerID})
+    
+    async def restore_from_snapshot(self):
+        if os.path.exists(os.path.join(self.snapshotDir, "snapshot_current.json")):
+            snapshot_file = os.path.join(self.snapshotDir, "snapshot_current.json")
+        else:
+            snapshot_file = os.path.join(self.snapshotDir, "snapshot_previous.json")
+        
+        if not os.path.exists(snapshot_file):
+            return False
+        
+        with open(snapshot_file, 'r') as f:
+            snapshot_data = json.load(f)
+        
+        self.workerID = snapshot_data["WorkerID"]
+        self.task_id = snapshot_data["task_id"]
+        self.primes = []
+        for prime in snapshot_data["primes"]:
+            self.primes.append(prime)
+        
+        self.processed = set()
+        for num in snapshot_data["processed"]:
+            self.processed.add(num)
+        
+        self.filename = snapshot_data["filename"]
+        await self.send_message({
+            'type': 'recover',
+            'worker_id': self.workerID,
+            'task_id': self.task_id
+        })
+        return True
+    
+
+    async def finish_recovery(self):
+        asyncio.create_task(self.process_file())
 
 async def main():
     # pull the worker-id
