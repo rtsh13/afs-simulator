@@ -29,9 +29,9 @@ class AFSClient:
             
             for attempt in range(self.max_retries):
                 try:
-                    print(";P")
+                    print("debug 1")
                     reader, writer = await asyncio.open_connection(host, port)
-                    print("({'})")
+                    print("debug 2")
                     
                     request = {
                         "method": method_name,
