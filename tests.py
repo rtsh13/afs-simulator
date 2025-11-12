@@ -328,6 +328,30 @@ def afs_replication_test(num_replicas, cache_dir, initial_address, afs_directory
     
     quit_system(system)
 
+#Coordinator shutdown
+def coordinator_failure(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=5):
+    processes = run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=fermats_number)
+
+    print("Waiting for 45 seconds to have snapshot")
+    time.sleep(45)
+
+
+    print("Killing coordinator and subprocesses")
+
+    #Kill coordinator and any subprocesses
+    for pid in processes["coordinator"]:
+        psutil.Process(pid).kill()
+
+    print("Starting new coordinator")
+    processes["coordinator"] = run_coordinator_subprocess(log_dir)
+
+    #Check snapshots directory for snapshots. 
+    print("Snapshots content")
+    directory_contents = os.listdir(snapshots_dir)
+    if len(directory_contents) > 0:
+        print(directory_contents)
+    else:
+        print("No snapshots created")
 
 
 #Three tests:
@@ -348,8 +372,15 @@ def all_tests():
     test_num = test_num + 1
     print("Running test 3, AFS primary failure")
     afs_primary_failure_test(3, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
+    print("----------")
+    test_num = test_num + 1
     print("Running test 4, AFS replication test")
     afs_replication_test(2, "tmp/", "localhost:8080", "data", "logs/test")
+    print("----------")
+    test_num = test_num + 1
+    print("Running test 5, coordinator failure")
+    coordinator_failure(3, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
+    print("----------")
 
 
 if __name__ == "__main__":
