@@ -3,6 +3,7 @@ import json
 import random
 import os
 import base64
+import sys
 
 
 class AFSClient:
@@ -201,3 +202,38 @@ class AFSClient:
                 os.remove(cache_path)
         self.cache.clear()
         print(f"[AFS] Cache cleared")
+
+async def main():
+    # pull the worker-id
+    if len(sys.argv) > 1:
+        clientID = sys.argv[1]
+    else:
+        clientID = f"worker-{random.randint(1000, 9999)}"
+
+    # pull the replica addresses
+    if len(sys.argv) > 2:
+        serversAddrs = sys.argv[2].split(',')
+    else:
+        serversAddrs = ["localhost:8080"]
+
+    if len(sys.argv) > 3:
+        retries = int(sys.argv[3])
+    else:
+        retries = 3
+
+    if len(sys.argv) > 4:
+        retryDelay = int(sys.argv[4])
+    else:
+        retryDelay = 1
+    
+    client = AFSClient(clientID, f"tmp/cli-{clientID}", serversAddrs, maxRetries=retries, retryDelay=retryDelay)
+    
+    test_file_path = "test_cli"+clientID + ".txt"
+
+    fileBytes = await client.open(test_file_path)
+    client.write(test_file_path, content)
+    client.close(test_file_path)
+
+
+if __name__ == "__main__":
+    asyncio.run(main())

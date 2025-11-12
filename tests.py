@@ -5,6 +5,8 @@ import re
 import shlex
 import datetime
 
+OPERATING_SYSTEM = "linux"
+
 def output_process_string(bash_args):
     sanitized_args = [shlex.quote(arg) for arg in bash_args]
     return " ".join(sanitized_args)
@@ -14,6 +16,12 @@ def current_utc_timestamp():
 
 def log_timestamp():
     current_utc_timestamp() + ": " + output_process_string([])
+
+def initial_python_args():
+    if OPERATING_SYSTEM == "linux":
+        return ["python3"]
+    if OPERATING_SYSTEM == "windows":
+        return ["py", "-3"]
 
 def run_afs_server_subprocess(server_id, address, server_ids, addresses, working_directory, log_dir, primary=False, path_to_subprocess="cmd/server/main.go"):
     os.makedirs(log_dir, exist_ok=True)
@@ -44,11 +52,10 @@ def run_afs_server_subprocess(server_id, address, server_ids, addresses, working
 
 
 def run_coordinator_subprocess(log_dir, path_to_subprocess="pkg/afs/coordinator.py"):
-    bash_args = [
-        "py",
-        "-3",
+    bash_args = initial_python_args()
+    bash_args.extend([
         "-u", path_to_subprocess,
-    ]
+    ])
     log_file_path = os.path.join(log_dir, "coordinator" + ".log")
 
     with open(log_file_path, "w") as logfile:
@@ -61,14 +68,13 @@ def run_coordinator_subprocess(log_dir, path_to_subprocess="pkg/afs/coordinator.
     return process
 
 def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5, path_to_subprocess="pkg/afs/worker.py"):
-    bash_args = [
-        "py",
-        "-3",
+    bash_args = initial_python_args()
+    bash_args.extend([
         "-u", path_to_subprocess,
         str(worker_id),
         ",".join(server_addresses),
         str(fermats_number)
-    ]
+    ])
     log_file_path = os.path.join(log_dir, "worker" + str(worker_id) +  ".log")
     with open(log_file_path, "w") as logfile:
         process = subprocess.Popen(
@@ -77,6 +83,24 @@ def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5
             stderr=logfile
         )
 
+    return process
+
+def run_client_subprocess(client_id, server_addresses, log_dir, max_retries=3, retry_delay=1, path_to_subprocess="pkg/afs/afsclient.py"):
+    bash_args = initial_python_args()
+    bash_args.extend([
+        "-u", path_to_subprocess,
+        str(client_id),
+        ",".join(server_addresses),
+        str(max_retries),
+        str(retry_delay)
+    ])
+    log_file_path = os.path.join(log_dir, "afsclient" + str(client_id) +  ".log")
+    with open(log_file_path, "w") as logfile:
+        process = subprocess.Popen(
+            bash_args,
+            stdout=logfile,
+            stderr=logfile
+        )
     return process
 
 
@@ -116,6 +140,26 @@ def check_log(log_dir, log_name, search_term, error_callback=None):
         search_results = re.findall(search_term, file_str)
         f.close()
         return search_results
+
+#Submethod for AFS
+def run_afs_system(num_replicas, initial_address, afs_directory, log_dir, primary_server=0):
+    addresses = build_local_address_strings(num_replicas, initial_address)
+
+    afs_processes = []
+
+    for i, address in enumerate(addresses):
+        afs_processes.append(
+            run_afs_server_subprocess(
+                i, 
+                address, 
+                range(num_replicas), 
+                addresses, 
+                afs_directory, 
+                log_dir, 
+                "true" if i == primary_server else "false"
+            )
+        )
+    return afs_processes
 
 
 def run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=5, primary_server=0):
@@ -246,6 +290,24 @@ def afs_primary_failure_test(num_replicas, num_workers, initial_address, afs_dir
     quit_system(processes)
 
 
+def afs_replication_test(num_replicas, cache_dir, initial_address, afs_directory, log_dir, max_retries=3, retry_delay=1, primary_server=0):
+    replicas_str = build_local_address_strings(num_replicas, initial_address)
+    system = {
+        "afs": [],
+        "client": None
+    }
+    system["afs"] = run_afs_system(num_replicas, initial_address, afs_directory, log_dir, primary_server=0)
+    system["client"] = run_client_subprocess(0, replicas_str, log_dir, max_retries=max_retries, retry_delay=retry_delay)
+
+    #Waiting for 10 seconds
+    time.sleep(10)
+
+    
+    
+    quit_system(system)
+
+
+
 #Three tests:
 #1 Run workers and get snapshots
 
@@ -266,4 +328,5 @@ def all_tests():
     afs_primary_failure_test(3, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
 
 if __name__ == "__main__":
-    all_tests()
+    afs_replication_test(3, "tmp/", "localhost:8080", "data", "logs/test")
+    #all_tests()
