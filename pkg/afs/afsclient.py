@@ -20,7 +20,6 @@ class AFSClient:
 
     async def _rpc_call(self, method_name: str, params: dict):
         for server_addr in self.replica_addrs:
-            print(server_addr)
             try:
                 host, port_str = server_addr.split(':')
                 port = int(port_str)
@@ -29,9 +28,7 @@ class AFSClient:
             
             for attempt in range(self.max_retries):
                 try:
-                    print("debug 1")
                     reader, writer = await asyncio.open_connection(host, port)
-                    print("debug 2")
                     
                     request = {
                         "method": method_name,
@@ -40,20 +37,14 @@ class AFSClient:
                     }
 
                     json_request = json.dumps(request)
-                    print(json_request)
                     writer.write(json_request.encode('utf-8'))
                     await writer.drain()
-                    print("drained")
                     data = await reader.read(10 * 1024 * 1024)
-                    print("read")
                     writer.close()
                     await writer.wait_closed()
-                    print("closed")
                     if not data:
-                        print("in the dumb excpetion which shouldn't be an exception")
                         raise Exception("Empty response from server")
 
-                    print(data)
                     response = json.loads(data.decode('utf-8'))
                     print("response loaded")
                     
@@ -125,7 +116,6 @@ class AFSClient:
         print("fetching from server")
         result = await self._rpc_call("ReplicaServer.FetchFile", 
                 {"ClientID": self.client_id,"Filename": filename})
-        print("(.)(.)")
         
         # server gives back []bytes
         # hence we decode it
@@ -239,8 +229,9 @@ async def main():
     
     test_file_path = "test_cli"+clientID + ".txt"
 
-    await client.write(test_file_path, b'testing testing 123')
-    await client.close(test_file_path)
+    fileBytes = await client.open(test_file_path)
+    client.write(test_file_path, fileBytes)
+    client.close(test_file_path)
 
 
 if __name__ == "__main__":

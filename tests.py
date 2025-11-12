@@ -39,7 +39,7 @@ def run_afs_server_subprocess(server_id, address, server_ids, addresses, working
     os.makedirs(replica_path, exist_ok=True)
     #Copy prepopulated files from main data to replica directory
     for file in prepopulated_files:
-        shutil.copy(os.path.join(working_directory, file), os.path.join(replica_path, destination_file))
+        shutil.copy(os.path.join(working_directory, file), os.path.join(replica_path, file))
 
     log_file_path = os.path.join(log_dir, "server" + str(server_id) + ".log")
 
@@ -69,10 +69,12 @@ def run_afs_server_subprocess(server_id, address, server_ids, addresses, working
 
     
 
-def run_coordinator_subprocess(log_dir, path_to_subprocess="pkg/afs/coordinator.py"):
-    bash_args = initial_python_args()
+def run_coordinator_subprocess(log_dir, server_addresses, id="coordinator", path_to_subprocess="pkg/afs/coordinator.py"):
+    bash_args = ["py", "-3"]
     bash_args.extend([
         "-u", path_to_subprocess,
+        id,
+        ",".join(server_addresses),
     ])
     log_file_path = os.path.join(log_dir, "coordinator" + ".log")
 
@@ -89,7 +91,7 @@ def run_coordinator_subprocess(log_dir, path_to_subprocess="pkg/afs/coordinator.
     return all_pids
 
 def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5, path_to_subprocess="pkg/afs/worker.py"):
-    bash_args = initial_python_args()
+    bash_args = ["py", "-3"]
     bash_args.extend([
         "-u", path_to_subprocess,
         str(worker_id),
@@ -109,7 +111,7 @@ def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5
     return all_pids
 
 def run_client_subprocess(client_id, server_addresses, log_dir, max_retries=3, retry_delay=1, path_to_subprocess="pkg/afs/afsclient.py"):
-    bash_args = initial_python_args()
+    bash_args = ["py", "-3"]
     bash_args.extend([
         "-u", path_to_subprocess,
         str(client_id),
@@ -211,7 +213,7 @@ def run_system(num_replicas, num_workers, initial_address, afs_directory, log_di
             )
         )
 
-    subprocesses["coordinator"] = run_coordinator_subprocess(log_dir)
+    subprocesses["coordinator"] = run_coordinator_subprocess(log_dir, addresses)
 
     time.sleep(3)
 
@@ -337,7 +339,7 @@ def afs_replication_test(num_replicas, cache_dir, initial_address, afs_directory
     replica_dirs = [os.path.join(afs_directory, str(i)) for i in num_replicas]
     matches = 0
     for replica_dir in replica_dirs:
-        matches = matches + len(list(filter(lambda x: x == test_output_file, os.listdir(replica))))
+        matches = matches + len(list(filter(lambda x: x == test_output_file, os.listdir(replica_dir))))
     
     print("Found " + str(matches) + " files matching the test case")
     if matches == 0:

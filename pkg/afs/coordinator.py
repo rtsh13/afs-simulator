@@ -116,7 +116,12 @@ class CoordinatorProtocol(asyncio.Protocol):
         task_id = message.get('task_id')
         if self.current_task and self.current_task.task_id == task_id:
             self.current_task.completed = True
-            CoordinatorProtocol.completed_tasks.append(self.current_task)
+            add_task_to_completed = True
+            for i in range(len(CoordinatorProtocol.completed_tasks)):
+                if self.current_task.task_id == CoordinatorProtocol.completed_tasks[i].task_id:
+                    add_task_to_completed = False
+            if add_task_to_completed:
+                CoordinatorProtocol.completed_tasks.append(self.current_task)
             index = -1
             for i in range(len(CoordinatorProtocol.pending_tasks)):
                 if self.current_task.task_id == CoordinatorProtocol.pending_tasks[i].task_id:
@@ -262,7 +267,6 @@ class CoordinatorProtocol(asyncio.Protocol):
                         results_to_write = cls.buffer_writer[:]
                         # Read in existing primes from file
                         bytesInFile = await cls.afsclient.open(cls.output_file)
-                        print("OWO")
                         content = bytesInFile.decode('utf-8')
                         content.strip()
 
@@ -286,8 +290,8 @@ class CoordinatorProtocol(asyncio.Protocol):
                         out_content = bytes("\n".join(str(prime) for prime in filtered_results), encoding='utf-8')
                         
                         # write bytes to file and flush output to afs server
-                        cls.afsclient.write(cls.output_file, out_content)
-                        cls.afsclient.close(cls.output_file)
+                        await cls.afsclient.write(cls.output_file, out_content)
+                        await cls.afsclient.close(cls.output_file)
                         
                         # clear buffer writer
                         cls.buffer_writer.clear()
@@ -383,7 +387,7 @@ class CoordinatorProtocol(asyncio.Protocol):
 
         cls.completed_tasks = []
         for task_data in coordinator_state['completed_tasks']:
-            task = coordinator_worker_task(task_data['task_id'], task_data['filename'])
+            task = coordinator_worker_task.Task(task_data['task_id'], task_data['filename'])
             cls.completed_tasks.append(task)
         
         cls.buffer_writer = []
