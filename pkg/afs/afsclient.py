@@ -256,11 +256,12 @@ async def main():
         print("ending write")
         await client.close(test_file_path)
     if isRead == 1:
-        test_file_path = "big_read"+clientID + ".txt"
+        test_file_path = "test_cli"+clientID + ".txt"
         print("starting read")
         await client.read(test_file_path)
         print("ending read")
         await client.close(test_file_path)
+        print("read successfully")
 
 if __name__ == "__main__":
     asyncio.run(main())
