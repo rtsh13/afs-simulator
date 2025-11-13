@@ -230,10 +230,16 @@ def quit_system(system_process_obj):
         if len(value) > 0 and type(value[0]) == list:
             for proc_list in value:
                 for proc in proc_list:
-                    psutil.Process(proc).kill()
+                    try:
+                        psutil.Process(proc).kill()
+                    except:
+                        None
         elif len(value) > 0 and type(value[0]) == int:
             for proc in value:
-                psutil.Process(proc).kill()
+                try:
+                    psutil.Process(proc).kill()
+                except:
+                    None
 
 
 
@@ -430,14 +436,13 @@ def all_tests():
 
 #Preconditions:
 #Directories for: data, logs, snapshots, need to exist
-#replica_dirs = [os.path.join(afs_directory, str(i)) for i in num_replicas]
-#Int object is not iterable
 
 #Currently, need to make sure that all go servers are killed before running
 #Use: ps -aux | egrep go
 #kill [pid]
 
 if __name__ == "__main__":
-    afs_replication_test(2, "tmp/", "localhost:8080", "data", "logs/test")
+    all_tests()
+    #afs_replication_test(2, "tmp/", "localhost:8080", "data", "logs/test")
     #ps -aux | egrep go
     #worker_snapshots_test(3, 3, "localhost:8080", "data", "logs/test" + str(1), "snapshots/")
