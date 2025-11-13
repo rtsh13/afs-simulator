@@ -216,22 +216,36 @@ async def main():
         serversAddrs = ["localhost:8080"]
 
     if len(sys.argv) > 3:
-        retries = int(sys.argv[3])
+        isWrite = int(sys.argv[3])
+    else:
+        isWrite = 0
+
+    if len(sys.argv) > 4:
+        retries = int(sys.argv[4])
     else:
         retries = 3
 
-    if len(sys.argv) > 4:
-        retryDelay = int(sys.argv[4])
+    if len(sys.argv) > 5:
+        retryDelay = int(sys.argv[5])
     else:
         retryDelay = 1
+
+    
     
     client = AFSClient(clientID, f"tmp/cli-{clientID}", serversAddrs, maxRetries=retries, retryDelay=retryDelay)
     
-    test_file_path = "test_cli"+clientID + ".txt"
-
-    await client.write(test_file_path, b'testing testing 123')
-    await client.close(test_file_path)
-
+    if isWrite == 0:
+        test_file_path = "test_cli"+clientID + ".txt"
+        print("starting write")
+        await client.write(test_file_path, b'testing testing 123')
+        print("ending write")
+        await client.close(test_file_path)
+    if isWrite == 1:
+        test_file_path = "big_read"+clientID + ".txt"
+        print("starting read")
+        await client.read(test_file_path)
+        print("ending read")
+        await client.close(test_file_path)
 
 if __name__ == "__main__":
     asyncio.run(main())

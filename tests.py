@@ -382,13 +382,26 @@ def coordinator_failure(num_replicas, num_workers, initial_address, afs_director
     else:
         print("No snapshots created")
 
+#Stackoverflow
+#From David Beazley, continuously reads log file
+def follow(thefile):
+    thefile.seek(0,2)
+    while True:
+        line = thefile.readline()
+        if not line:
+            time.sleep(0.1)
+            continue
+        yield line
 
-#Three tests:
-#1 Run workers and get snapshots
+#Note: infinite loops
+def wait_for_log(wait_line, log_file_path):
+    with open(log_file_path, "r") as logfile:
+        followed = follow(logfile)
+        for line in followed.readlines():
+            if (line.strip().find(wait_lines.strip()) != -1):
+                print("Found: " + line.strip())
+                return True
 
-#2 Kill a worker and see what happens
-
-#3 Test if AFS primary server fails
 def all_tests():
     test_num = 1
     print("Running test 1, snapshot creation")
@@ -413,5 +426,5 @@ def all_tests():
 
 
 if __name__ == "__main__":
+    worker_snapshots_test(3, 3, "localhost:8080", "data", "logs/test" + str(1), "snapshots/")
     #all_tests()
-    afs_replication_test(2, "tmp/", "localhost:8080", "data", "logs/test")
