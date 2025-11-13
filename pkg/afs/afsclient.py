@@ -203,6 +203,7 @@ class AFSClient:
         print(f"[AFS] Cache cleared")
 
 async def main():
+    print("starting")
     # pull the worker-id
     if len(sys.argv) > 1:
         clientID = sys.argv[1]
@@ -216,9 +217,9 @@ async def main():
         serversAddrs = ["localhost:8080"]
 
     if len(sys.argv) > 3:
-        isWrite = int(sys.argv[3])
+        isRead = int(sys.argv[3])
     else:
-        isWrite = 0
+        isRead = 0
 
     if len(sys.argv) > 4:
         retries = int(sys.argv[4])
@@ -229,18 +230,32 @@ async def main():
         retryDelay = int(sys.argv[5])
     else:
         retryDelay = 1
+    print("waiting")
 
-    
+    print("is read")
+    print(isRead)
+
+    print("instantiating client with following parameters")
+    print("clientID")
+    print(clientID)
+    print("cache directory")
+    print(f"tmp/cli-{clientID}")
+    print("server addresses")
+    print(serversAddrs)
+    print("max retries")
+    print(retries)
+    print("retry delay")
+    print(retryDelay)
     
     client = AFSClient(clientID, f"tmp/cli-{clientID}", serversAddrs, maxRetries=retries, retryDelay=retryDelay)
     
-    if isWrite == 0:
+    if isRead == 0:
         test_file_path = "test_cli"+clientID + ".txt"
         print("starting write")
         await client.write(test_file_path, b'testing testing 123')
         print("ending write")
         await client.close(test_file_path)
-    if isWrite == 1:
+    if isRead == 1:
         test_file_path = "big_read"+clientID + ".txt"
         print("starting read")
         await client.read(test_file_path)

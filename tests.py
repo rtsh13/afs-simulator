@@ -110,17 +110,18 @@ def run_worker_subprocess(worker_id, server_addresses, log_dir, fermats_number=5
 
     return all_pids
 
-def run_client_subprocess(client_id, server_addresses, log_dir, max_retries=3, retry_delay=1, path_to_subprocess="pkg/afs/afsclient.py"):
+#Do read vs write determines if the test client will read a file or write a file (which is hardcoded in afsclient.py)
+def run_client_subprocess(client_id, server_addresses, log_dir, doReadvsWrite=False, max_retries=3, retry_delay=1, path_to_subprocess="pkg/afs/afsclient.py"):
     bash_args = initial_python_args()
     bash_args.extend([
         "-u", path_to_subprocess,
         str(client_id),
         ",".join(server_addresses),
+        str(1) if doReadvsWrite else str(0),
         str(max_retries),
         str(retry_delay)
     ])
     log_file_path = os.path.join(log_dir, "afsclient" + str(client_id) +  ".log")
-
     all_pids = None
     with open(log_file_path, "w") as logfile:
         process = subprocess.Popen(
@@ -336,7 +337,7 @@ def afs_replication_test(num_replicas, cache_dir, initial_address, afs_directory
     test_output_file = "test_cli"+str(0) + ".txt"
 
     #Search replica directories
-    replica_dirs = [os.path.join(afs_directory, str(i)) for i in num_replicas]
+    replica_dirs = [os.path.join(afs_directory, str(i)) for i in range(num_replicas)]
     matches = 0
     for replica_dir in replica_dirs:
         matches = matches + len(list(filter(lambda x: x == test_output_file, os.listdir(replica_dir))))
@@ -348,7 +349,6 @@ def afs_replication_test(num_replicas, cache_dir, initial_address, afs_directory
         print("Write success, no duplicates")
     if matches > 1:
         print("Write success, duplicates found")
-
 
     #Waiting for 10 seconds
     time.sleep(10)
@@ -369,7 +369,10 @@ def coordinator_failure(num_replicas, num_workers, initial_address, afs_director
 
     #Kill coordinator and any subprocesses
     for pid in processes["coordinator"]:
-        psutil.Process(pid).kill()
+        try:
+            psutil.Process(pid).kill()
+        except:
+            None
 
     print("Starting new coordinator")
     processes["coordinator"] = run_coordinator_subprocess(log_dir)
@@ -425,6 +428,16 @@ def all_tests():
     print("----------")
 
 
+#Preconditions:
+#Directories for: data, logs, snapshots, need to exist
+#replica_dirs = [os.path.join(afs_directory, str(i)) for i in num_replicas]
+#Int object is not iterable
+
+#Currently, need to make sure that all go servers are killed before running
+#Use: ps -aux | egrep go
+#kill [pid]
+
 if __name__ == "__main__":
-    worker_snapshots_test(3, 3, "localhost:8080", "data", "logs/test" + str(1), "snapshots/")
-    #all_tests()
+    afs_replication_test(2, "tmp/", "localhost:8080", "data", "logs/test")
+    #ps -aux | egrep go
+    #worker_snapshots_test(3, 3, "localhost:8080", "data", "logs/test" + str(1), "snapshots/")
