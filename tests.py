@@ -357,10 +357,9 @@ def afs_replication_test(num_replicas, cache_dir, initial_address, afs_directory
         print("Write success, duplicates found")
 
     #Waiting for 10 seconds
+    print("Sleeping for 10 seconds")
     time.sleep(10)
 
-    
-    
     quit_system(system)
 
 #Coordinator shutdown
@@ -390,6 +389,59 @@ def coordinator_failure(num_replicas, num_workers, initial_address, afs_director
         print(directory_contents)
     else:
         print("No snapshots created")
+
+#AFS fault tolerance
+def server_crash_during_read(num_replicas, initial_address, afs_directory, log_dir, primary_server=primary_server, replication=False):
+    replicas_str = build_local_address_strings(num_replicas, initial_address)
+    system = {
+        "afs": [],
+        "client": None
+    }
+    system["afs"] = run_afs_system(num_replicas, initial_address, afs_directory, log_dir, primary_server=0)
+    time.sleep(3)
+    print("starting server, waiting for 3 seconds")
+
+    if replication:
+        file_to_read = os.path.join(afs_directory, "0")
+    else:
+        file_to_read = afs_directory
+    file_to_read = os.path.join("test_cli"+str(0) + ".txt")
+    
+    print("initially writing the big file")
+    with open(file_to_read, "w") as output_file:
+        for i in tqdm(range(len(10000))):
+            output_file.writeline("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+    print("big file write complete")
+    
+    print("starting read")
+    system["client"] = run_client_subprocess(0, replicas_str, log_dir, doReadvsWrite=True, max_retries=max_retries, retry_delay=retry_delay)
+    print("waiting to crash server")
+    client_log = os.path.join(log_dir, "afsclient0.log")
+    wait_for_log("starting read", client_log)
+    print("waiting 1 second after read start")
+    time.sleep(1)
+    quit_system({"afs": system["afs"]})
+
+    print("restart server, wait for 3 seconds")
+    system["afs"] = run_afs_system(num_replicas, initial_address, afs_directory, log_dir, primary_server=0)
+    time.sleep(3)
+
+    #Up to the client application to decide to restart, here we just start our test client again from the CLI
+    print("have client resubmit")
+    quit_system({"client": system["client"]})
+    system["client"] = run_client_subprocess(0, replicas_str, log_dir, doReadvsWrite=True, max_retries=max_retries, retry_delay=retry_delay)
+    
+    
+    with open(client_log, "r") as client_file:
+        log_lines = [line for line in client_file.readlines()]
+        if log_lines[-1].find("read successfully") != -1:
+            print("Success: Client read successfully")
+        else:
+            print("Failure: Client did not read successfully")
+
+
+
+
 
 #Stackoverflow
 #From David Beazley, continuously reads log file
