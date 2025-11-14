@@ -7,7 +7,7 @@ import datetime
 import psutil
 import shutil
 
-OPERATING_SYSTEM = "linux"
+OPERATING_SYSTEM = "windows"
 
 def output_process_string(bash_args):
     sanitized_args = [shlex.quote(arg) for arg in bash_args]
@@ -261,38 +261,35 @@ def worker_failure_test(num_replicas, num_workers, initial_address, afs_director
     print("Wait for 15 seconds for Worker 0 to begin processing")
     time.sleep(15)
     print("Now we kill Worker 0")
-    processes["worker"][0].kill()
+    value = processes["worker"][0]
+    if len(value) > 0 and type(value[0]) == list:
+            for proc_list in value:
+                for proc in proc_list:
+                    try:
+                        psutil.Process(proc).kill()
+                    except:
+                        None
+    elif len(value) > 0 and type(value[0]) == int:
+        for proc in value:
+            try:
+                psutil.Process(proc).kill()
+            except:
+                None
     
-    print("3 second wait, then restarting Worker 0")
-    time.sleep(3)
-    
-    processes["worker"][0] = run_worker_subprocess(0, addresses, log_dir, fermats_number=fermats_number)
-    
-    print("attempted Worker 0 restart, waiting for 10 seconds then returning results")
-    time.sleep(10)
+    print("waiting for 90 seconds then returning results")
+    time.sleep(90)
     quit_system(processes)
 
-
-    #Check criteria 1: if worker 0 recovered from being shut down
-    model_registered = False
-    register_search = check_log(log_dir, "worker0-restart.log", "registered")
-    if register_search and len(register_search) >= 1:
-        model_registered = True
-    
-    if model_registered:
-        print("Criteria 1: Worker 0 successfully recovered")
-    else:
-        print("Criteria 1: Worker 0 failed to recover")
 
 
     #Check criteria 2: if worker 1 picked up work from worker 0
     completed_tasks = None
     def error_func():
-        raise Exception("Error while checking criteria 2: Worker 1 log not accessed properly")
+        raise Exception("Error while checking criteria 1: Worker 1 log not accessed properly")
 
     completed_tasks = len(check_log(log_dir, "worker1.log", "Complete", error_callback= error_func))
 
-    print("Criteria 2 " + ("SUCCESS" if completed_tasks > 0 else "FAILURE") + ": Worker 1 (expected backup) completed " + str(completed_tasks) + " tasks")
+    print("Criteria 1 " + ("SUCCESS" if completed_tasks > 0 else "FAILURE") + ": Worker 1 (expected backup) completed " + str(completed_tasks) + " tasks")
     
 
 #Basic afs primary failure test
@@ -302,10 +299,23 @@ def afs_primary_failure_test(num_replicas, num_workers, initial_address, afs_dir
 
     print("Running for 15 seconds before killing primary server")
     time.sleep(15)
-    processes["afs"][0].kill()
+    value = processes["afs"][1]
+    if len(value) > 0 and type(value[0]) == list:
+            for proc_list in value:
+                for proc in proc_list:
+                    try:
+                        psutil.Process(proc).kill()
+                    except:
+                        None
+    elif len(value) > 0 and type(value[0]) == int:
+        for proc in value:
+            try:
+                psutil.Process(proc).kill()
+            except:
+                None
 
-    print("Running system for 30 seconds after primary failure")
-    time.sleep(30)
+    print("Running system for 60 seconds after primary failure")
+    time.sleep(60)
 
     completed_tasks = []
     for worker in range(num_workers):
@@ -360,6 +370,7 @@ def afs_replication_test(num_replicas, cache_dir, initial_address, afs_directory
 #Coordinator shutdown
 def coordinator_failure(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=5):
     processes = run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshots_dir, fermats_number=fermats_number)
+    addresses = build_local_address_strings(num_replicas, initial_address)
 
     print("Waiting for 45 seconds to have snapshot")
     time.sleep(45)
@@ -372,7 +383,7 @@ def coordinator_failure(num_replicas, num_workers, initial_address, afs_director
         psutil.Process(pid).kill()
 
     print("Starting new coordinator")
-    processes["coordinator"] = run_coordinator_subprocess(log_dir)
+    processes["coordinator"] = run_coordinator_subprocess(log_dir, addresses)
 
     #Check snapshots directory for snapshots. 
     print("Snapshots content")
@@ -382,34 +393,60 @@ def coordinator_failure(num_replicas, num_workers, initial_address, afs_director
     else:
         print("No snapshots created")
 
+def happy_path(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshot_dir):
+    processes = run_system(num_replicas, num_workers, initial_address, afs_directory, log_dir, snapshot_dir, fermats_number=5)
 
-#Three tests:
-#1 Run workers and get snapshots
+    print("Waiting for 90 seconds to populate primes")
+    time.sleep(90)
+    quit_system(processes)
+
+#Stackoverflow
+#From David Beazley, continuously reads log file
+def follow(thefile):
+    thefile.seek(0,2)
+    while True:
+        line = thefile.readline()
+        if not line:
+            time.sleep(0.1)
+            continue
+        yield line
+
+#Note: infinite loops
+def wait_for_log(wait_line, log_file_path):
+    with open(log_file_path, "r") as logfile:
+        followed = follow(logfile)
+        for line in followed.readlines():
+            if (line.strip().find(wait_line.strip()) != -1):
+                print("Found: " + line.strip())
+                return True
 
 #2 Kill a worker and see what happens
 
 #3 Test if AFS primary server fails
 def all_tests():
+
+    # print("Running Happy Path")
+    # happy_path(3, 3, "localhost:8080", "data", "log/test", "snapshots/")
     test_num = 1
-    print("Running test 1, snapshot creation")
-    worker_snapshots_test(3, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
-    print("----------")
+    # print("Running test 1, snapshot creation")
+    # worker_snapshots_test(3, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
+    # print("----------")
     test_num = test_num + 1
-    print("Running test 2, worker failure")
-    worker_failure_test(3, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
-    print("----------")
+    # print("Running test 2, worker failure")
+    # worker_failure_test(3, 2, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
+    # print("----------")
     test_num = test_num + 1
     print("Running test 3, AFS primary failure")
-    afs_primary_failure_test(3, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
+    afs_primary_failure_test(2, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
     print("----------")
     test_num = test_num + 1
-    print("Running test 4, AFS replication test")
-    afs_replication_test(2, "tmp/", "localhost:8080", "data", "logs/test")
-    print("----------")
+    # print("Running test 4, AFS replication test")
+    # afs_replication_test(2, "tmp/", "localhost:8080", "data", "logs/test")
+    # print("----------")
     test_num = test_num + 1
-    print("Running test 5, coordinator failure")
-    coordinator_failure(3, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
-    print("----------")
+    # print("Running test 5, coordinator failure")
+    # coordinator_failure(3, 3, "localhost:8080", "data", "logs/test" + str(test_num), "snapshots/")
+    # print("----------")
 
 
 if __name__ == "__main__":

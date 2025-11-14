@@ -165,6 +165,7 @@ class WorkerClient(object):
             
             # Close file (flushes if modified)
             await self.client.close(filename)
+            print("Complete")
             
         except Exception as e:
             self.tasks_failed += 1
